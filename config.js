@@ -11,5 +11,5 @@
  *   apiUrl: 'https://script.google.com/macros/s/AKfycbx.../exec'
  */
 window.PROKTORLAB_CONFIG = {
-  apiUrl: ''
+  apiUrl: 'https://script.google.com/macros/s/AKfycby5uGjA9GbeDO7HNKObQ5VksapZ6xkYzmo2A64lhtN-q6w8MgvGjfFs7vyY5Bf6G3La/exec'
 };
