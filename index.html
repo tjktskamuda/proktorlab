@@ -1,0 +1,2138 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ProktorLab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Konsol admin: sidebar kiri + tabel padat, aksen biru dongker ala konsol manajemen endpoint. */
+:root {
+  --bg: #f2f4f9;
+  --surface: #ffffff;
+  --surface-2: #f6f7fb;
+  --line: #e1e5ef;
+  --line-2: #cfd5e3;
+  --text: #1b2033;
+  --muted: #5f6880;
+  --navy: #1f2d8f;
+  --navy-hover: #172377;
+  --navy-soft: #e3e9fb;
+  --navy-text: #22339f;
+  --on-navy: #ffffff;
+  --ok: #17824a; --ok-soft: #e1f3e8;
+  --bad: #c62828; --bad-soft: #fbe7e7;
+  --warn: #a8650f; --warn-soft: #fbf0d9;
+  --info: #2457d6; --info-soft: #e4ecfd;
+  --idle: #8a93a8; --idle-soft: #eceef4;
+  --shadow: 0 1px 2px rgba(20, 28, 70, .06), 0 4px 16px rgba(20, 28, 70, .05);
+  --scrim: rgba(12, 16, 40, .45);
+  --f-ui: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1120; --surface: #161a2b; --surface-2: #1c2135; --line: #283049; --line-2: #343d5a;
+    --text: #e4e7f1; --muted: #9aa2b9; --navy: #4f5fe6; --navy-hover: #6170ee; --navy-soft: #232a52;
+    --navy-text: #a3afff; --on-navy: #ffffff;
+    --ok: #46c985; --ok-soft: #12301f; --bad: #ff6f6f; --bad-soft: #3a1818; --warn: #f0b44c; --warn-soft: #3a2b10;
+    --info: #79a8ff; --info-soft: #172649; --idle: #7d86a0; --idle-soft: #22283d;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3); --scrim: rgba(0, 0, 0, .6); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1120; --surface: #161a2b; --surface-2: #1c2135; --line: #283049; --line-2: #343d5a;
+  --text: #e4e7f1; --muted: #9aa2b9; --navy: #4f5fe6; --navy-hover: #6170ee; --navy-soft: #232a52;
+  --navy-text: #a3afff; --on-navy: #ffffff;
+  --ok: #46c985; --ok-soft: #12301f; --bad: #ff6f6f; --bad-soft: #3a1818; --warn: #f0b44c; --warn-soft: #3a2b10;
+  --info: #79a8ff; --info-soft: #172649; --idle: #7d86a0; --idle-soft: #22283d;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3); --scrim: rgba(0, 0, 0, .6); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--f-ui); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--navy-text); }
+.mono { font-family: var(--f-mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.ic { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ic.sm { width: 15px; height: 15px; }
+.ic.lg { width: 30px; height: 30px; }
+:focus-visible { outline: 2px solid var(--navy-text); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+/* ---------- shell ---------- */
+.demo-bar { background: var(--warn-soft); color: var(--text); border-bottom: 1px solid var(--line); font-size: 13px;
+  padding: 7px max(16px, env(safe-area-inset-right, 0px)) 7px max(16px, env(safe-area-inset-left, 0px)); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.demo-bar b { color: var(--warn); }
+.demo-bar button { border: 0; background: none; color: var(--navy-text); text-decoration: underline; cursor: pointer; padding: 0; }
+.shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100%; }
+.shell.collapsed { grid-template-columns: 64px minmax(0, 1fr); }
+.side { background: var(--surface); border-right: 1px solid var(--line); position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; z-index: 30; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 16px 14px 14px 18px; }
+.brand .logo { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--navy-text); min-width: 0; }
+.brand .word { font-weight: 800; font-style: italic; font-size: 22px; letter-spacing: -.02em; white-space: nowrap; }
+.brand .word span { color: var(--text); }
+.brand .collapse { margin-left: auto; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 4px; display: flex; }
+.brand .collapse:hover { background: var(--surface-2); }
+.nav { padding: 4px 10px 16px; display: flex; flex-direction: column; gap: 1px; }
+.nav .sect { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 14px 10px 6px; }
+.nav button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: var(--r); cursor: pointer; color: var(--text); font-weight: 500; }
+.nav button:hover { background: var(--surface-2); }
+.nav button.on { background: var(--navy-soft); color: var(--navy-text); font-weight: 700; }
+.nav button .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav button .cnt { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.nav .sub { display: flex; flex-direction: column; gap: 1px; margin-left: 18px; padding-left: 8px; border-left: 1px solid var(--line); }
+.nav .sub button { padding: 6px 10px; font-size: 13.5px; }
+.nav .chev { transition: transform .15s; }
+.nav .chev.open { transform: rotate(180deg); }
+.side-foot { margin-top: auto; padding: 12px 18px 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
+.side-foot button { border: 0; background: none; color: var(--muted); cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0; }
+.side-foot button:hover { color: var(--text); }
+.shell.collapsed .brand .word, .shell.collapsed .nav .lbl, .shell.collapsed .nav .cnt, .shell.collapsed .nav .sect,
+.shell.collapsed .nav .sub, .shell.collapsed .nav .chev, .shell.collapsed .side-foot span, .shell.collapsed .side-foot .ver { display: none; }
+.shell.collapsed .brand { flex-direction: column; padding: 14px 8px; }
+.shell.collapsed .brand .collapse { margin: 0; transform: rotate(180deg); }
+.shell.collapsed .nav button { justify-content: center; }
+
+.main { min-width: 0; display: flex; flex-direction: column; }
+.top { position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); min-height: 52px; }
+.top .burger { display: none; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 6px; cursor: pointer; }
+.crumbs { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; color: var(--muted); font-size: 13.5px; }
+.crumbs button { border: 0; background: none; padding: 0; cursor: pointer; color: var(--text); font-weight: 600; }
+.crumbs button:hover { color: var(--navy-text); text-decoration: underline; }
+.crumbs .sep { color: var(--line-2); }
+.crumbs .cur { color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40ch; }
+.top .right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+.top .clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.content { padding: 20px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+@media (min-width: 1100px) { .content { padding-left: 28px; padding-right: 28px; } }
+.page-h { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.page-h h1 { font-size: 21px; margin: 0; font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
+.page-h p { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
+.page-h .act { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- controls ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 4px; border: 1px solid var(--navy); background: var(--navy); color: var(--on-navy);
+  font-weight: 600; font-size: 13.5px; padding: 8px 14px; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s; text-decoration: none; }
+.btn:hover:not(:disabled) { background: var(--navy-hover); border-color: var(--navy-hover); }
+.btn:disabled { background: var(--idle-soft); border-color: var(--line); color: var(--idle); cursor: not-allowed; }
+.btn.ghost { background: var(--surface); color: var(--text); border-color: var(--line-2); }
+.btn.ghost:hover:not(:disabled) { background: var(--surface-2); border-color: var(--line-2); }
+.btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn.danger:hover:not(:disabled) { filter: brightness(.92); background: var(--bad); }
+.btn.sm { padding: 5px 10px; font-size: 12.5px; }
+.btn.big { padding: 12px 16px; font-size: 14.5px; }
+.inp, select.inp, textarea.inp { width: 100%; border: 1px solid var(--line-2); background: var(--surface); border-radius: 4px; padding: 8px 10px; min-height: 36px; }
+.inp:focus { outline: 2px solid var(--navy-soft); border-color: var(--navy-text); }
+textarea.inp { min-height: 84px; resize: vertical; }
+label.f { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; }
+label.f .hint { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+.search { position: relative; flex: 1 1 220px; max-width: 360px; }
+.search .ic { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.search .inp { padding-left: 34px; }
+.drop { position: relative; display: inline-block; }
+.drop-menu { position: absolute; top: calc(100% + 4px); left: 0; min-width: 230px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); z-index: 40; padding: 4px; }
+.drop-menu button { display: flex; width: 100%; gap: 9px; align-items: center; border: 0; background: none; padding: 8px 10px; border-radius: 4px; cursor: pointer; text-align: left; }
+.drop-menu button:hover:not(:disabled) { background: var(--surface-2); }
+.drop-menu button:disabled { color: var(--idle); cursor: not-allowed; }
+.drop-menu button.red { color: var(--bad); }
+
+/* ---------- cards ---------- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); min-width: 0; }
+.card > .hd { padding: 14px 16px 0; display: flex; align-items: center; gap: 10px; }
+.card > .hd h2 { font-size: 15px; margin: 0; font-weight: 700; }
+.card > .hd .sub { color: var(--muted); font-size: 12.5px; }
+.card > .hd .act { margin-left: auto; }
+.card > .bd { padding: 14px 16px 16px; }
+.grid { display: grid; gap: 16px; }
+.g-dash { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.g-dash > .c4 { grid-column: span 4; } .g-dash > .c5 { grid-column: span 5; } .g-dash > .c7 { grid-column: span 7; }
+.g-dash > .c6 { grid-column: span 6; } .g-dash > .c8 { grid-column: span 8; } .g-dash > .c12 { grid-column: span 12; }
+@media (max-width: 1100px) { .g-dash > .c4, .g-dash > .c5, .g-dash > .c7, .g-dash > .c8 { grid-column: span 6; } }
+@media (max-width: 720px) { .g-dash > * { grid-column: span 12 !important; } }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; }
+.stat { display: flex; gap: 14px; align-items: center; }
+.stat .ic { width: 34px; height: 34px; color: var(--navy-text); stroke-width: 1.6; }
+.stat .ic.okc { color: var(--ok); } .stat .ic.badc { color: var(--bad); } .stat .ic.infoc { color: var(--info); }
+.stat b { display: block; font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; }
+.gauge-wrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.gauge { width: 190px; max-width: 100%; }
+.gauge svg { width: 100%; height: auto; display: block; }
+.gauge .num { font-size: 30px; font-weight: 700; fill: var(--text); font-family: var(--f-ui); }
+.gauge .cap { font-size: 12.5px; fill: var(--muted); font-family: var(--f-ui); }
+.legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 900px) { .quick { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.qbtn { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left; border: 1px solid var(--line-2); background: var(--surface); border-radius: var(--r); padding: 12px 12px 11px; cursor: pointer; min-width: 0; }
+.qbtn:hover { border-color: var(--navy-text); background: var(--navy-soft); }
+.qbtn .ic { color: var(--navy-text); width: 22px; height: 22px; }
+.qbtn b { font-size: 14px; } .qbtn span { font-size: 12px; color: var(--muted); }
+.qbtn.red .ic { color: var(--bad); }
+.quick-hd { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.quick-hd select { width: auto; min-width: 200px; }
+
+/* ---------- table ---------- */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.filters select.inp { width: auto; min-width: 140px; }
+.filters .count { margin-left: auto; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.tbl-wrap { overflow-x: auto; border-top: 1px solid var(--line); }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tbl th { position: sticky; top: 0; background: var(--surface-2); text-align: left; font-weight: 700; font-size: 12.5px; color: var(--text); padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl th.sort { cursor: pointer; user-select: none; }
+.tbl th.sort:hover { color: var(--navy-text); }
+.tbl td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tbl tbody tr:hover td { background: var(--surface-2); }
+.tbl tbody tr.sel td { background: var(--navy-soft); }
+.tbl tbody tr.click { cursor: pointer; }
+.tbl .chk { width: 38px; padding-right: 0; }
+.tbl input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--navy); cursor: pointer; }
+.tbl .nm { font-weight: 700; white-space: nowrap; }
+.tbl .nm button { border: 0; background: none; padding: 0; font-weight: 700; color: var(--text); cursor: pointer; }
+.tbl .nm button:hover { color: var(--navy-text); text-decoration: underline; }
+.tbl .nowrap { white-space: nowrap; }
+.tbl .user { white-space: nowrap; }
+.tbl .cm { min-width: 120px; max-width: 220px; }
+.tbl .msg { min-width: 220px; max-width: 420px; color: var(--muted); }
+.tbl-foot { display: flex; align-items: center; gap: 12px; justify-content: flex-end; padding: 10px 16px; color: var(--muted); font-size: 13px; flex-wrap: wrap; }
+.tbl-foot select { width: auto; min-height: 30px; padding: 3px 8px; }
+.tbl-foot .pg { display: flex; gap: 4px; }
+.empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+.empty .ic { width: 36px; height: 36px; color: var(--line-2); margin-bottom: 8px; }
+.st { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; white-space: nowrap; }
+.st::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.st.on { color: var(--ok); } .st.off { color: var(--idle); }
+.chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.chip.Berhasil { background: var(--ok-soft); color: var(--ok); }
+.chip.Gagal { background: var(--bad-soft); color: var(--bad); }
+.chip.Menunggu { background: var(--idle-soft); color: var(--muted); }
+.chip.Diterima { background: var(--info-soft); color: var(--info); }
+.chip.Kedaluwarsa { background: var(--warn-soft); color: var(--warn); }
+.chip.Dibatalkan { background: var(--idle-soft); color: var(--idle); text-decoration: line-through; }
+.chip.run { background: var(--ok-soft); color: var(--ok); }
+.chip.no { background: var(--idle-soft); color: var(--muted); }
+.chip.Selesai { background: var(--ok-soft); color: var(--ok); }
+.chip.Berjalan { background: var(--info-soft); color: var(--info); }
+.chip.Terjadwal { background: var(--warn-soft); color: var(--warn); }
+.bar { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--idle-soft); min-width: 120px; }
+.bar i { display: block; height: 100%; }
+.bar .Berhasil { background: var(--ok); } .bar .Gagal { background: var(--bad); } .bar .Diterima { background: var(--info); }
+.bar .Kedaluwarsa { background: var(--warn); } .bar .Dibatalkan { background: var(--idle); }
+.sel-note { font-size: 13px; color: var(--navy-text); font-weight: 600; display: flex; gap: 10px; align-items: center; }
+.sel-note button { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; padding: 0; font-size: 12.5px; }
+
+/* ---------- modal / wizard ---------- */
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 80; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fade .15s; }
+@keyframes fade { from { opacity: 0; } }
+.modal { background: var(--surface); border-radius: 8px; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); width: min(560px, 100%); max-height: calc(100vh - 40px); display: flex; flex-direction: column; min-width: 0; }
+.modal.wide { width: min(880px, 100%); height: min(720px, calc(100vh - 40px)); }
+.modal .mh { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.modal .mh h3 { margin: 0; font-size: 17px; }
+.modal .mh .x { margin-left: auto; border: 0; background: none; cursor: pointer; color: var(--muted); padding: 4px; border-radius: 4px; display: flex; }
+.modal .mh .x:hover { background: var(--surface-2); }
+.modal .mb { padding: 18px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.modal .mf { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line); align-items: center; flex-wrap: wrap; }
+.modal .mf .sp { flex: 1; }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 14px 20px 0; }
+.steps .s { display: flex; align-items: baseline; gap: 8px; padding-bottom: 10px; border-bottom: 3px solid var(--line); color: var(--muted); font-weight: 600; font-size: 13.5px; min-width: 0; }
+.steps .s b { font-size: 22px; font-weight: 600; color: var(--line-2); }
+.steps .s.on { border-color: var(--navy); color: var(--text); } .steps .s.on b { color: var(--navy-text); }
+.steps .s.done { border-color: var(--navy); } .steps .s.done b { color: var(--navy-text); }
+.steps .s span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.sitem { display: flex; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: flex-start; }
+.sitem:last-child { border-bottom: 0; }
+.sitem:hover { background: var(--surface-2); }
+.sitem.on { background: var(--navy-soft); }
+.sitem input { margin-top: 3px; accent-color: var(--navy); width: 16px; height: 16px; flex: none; }
+.sitem .t { font-weight: 700; } .sitem .d { color: var(--muted); font-size: 12.8px; margin-top: 2px; }
+.sitem .t small { font-weight: 500; color: var(--muted); margin-left: 6px; }
+.eplist { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.epi { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 4px; padding: 7px 9px; cursor: pointer; font-size: 13px; min-width: 0; }
+.epi:hover { border-color: var(--line-2); background: var(--surface-2); }
+.epi.on { border-color: var(--navy-text); background: var(--navy-soft); }
+.epi input { accent-color: var(--navy); }
+.epi .n { font-weight: 700; } .epi .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); margin-left: auto; flex: none; }
+.epi .dot.on { background: var(--ok); }
+.radio { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.radio input { accent-color: var(--navy); width: 16px; height: 16px; margin-top: 2px; }
+.sched { display: flex; flex-direction: column; gap: 12px; padding-left: 4px; }
+.sched .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-left: 26px; }
+.sched .row .inp { width: auto; }
+.box { border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; background: var(--surface-2); }
+.box.info { background: var(--info-soft); border-color: transparent; }
+.box.warn { background: var(--warn-soft); border-color: transparent; }
+.h-sec { font-size: 14px; font-weight: 700; margin: 4px 0 0; }
+
+/* ---------- drawer ---------- */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%); background: var(--surface); z-index: 81; box-shadow: -10px 0 40px rgba(0, 0, 0, .2); display: flex; flex-direction: column; animation: slide .18s ease-out; }
+@keyframes slide { from { transform: translateX(30px); opacity: 0; } }
+.drawer .mb { padding: 18px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+dl.kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 12px; margin: 0; font-size: 13.5px; }
+dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; overflow-wrap: anywhere; }
+.btn-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+
+/* ---------- misc ---------- */
+.toasts { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.toast { background: var(--text); color: var(--surface); padding: 10px 14px; border-radius: 6px; box-shadow: var(--shadow); font-size: 13.5px; max-width: min(420px, calc(100vw - 32px)); animation: fade .2s; display: flex; gap: 8px; align-items: center; }
+.toast.err { background: var(--bad); color: #fff; }
+.codebox { position: relative; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; font-family: var(--f-mono); font-size: 12.5px; overflow-x: auto; white-space: pre; }
+.codebox.wrap { white-space: pre-wrap; word-break: break-all; }
+.code-row { display: flex; gap: 8px; align-items: stretch; }
+.code-row .codebox { flex: 1; min-width: 0; }
+pre.src { margin: 0; max-height: 420px; overflow: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; font: 12px/1.5 var(--f-mono); }
+ol.howto { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
+ol.howto li { padding-left: 4px; }
+ol.howto li::marker { font-weight: 700; color: var(--navy-text); }
+.kbd { font-family: var(--f-mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.form-grid .full { grid-column: 1 / -1; }
+@media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+.split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 980px) { .split { grid-template-columns: 1fr; } }
+.preview { border-radius: 10px; padding: 22px 16px 20px; background: linear-gradient(180deg, #f5f6fd, #e9ecf9); color: #121633; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; border: 1px solid var(--line); }
+.preview .lb { color: #1d4ed8; font-size: 10px; letter-spacing: .25em; font-weight: 800; }
+.preview .sc { font-size: clamp(20px, 3vw, 28px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.preview .sb { color: #4a5068; font-size: 13px; }
+.preview .pills { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.preview .pills span { background: #fff; border-radius: 999px; padding: 6px 14px; font-weight: 800; font-size: 12px; box-shadow: 0 6px 16px rgba(30, 40, 110, .1); }
+.preview .digits { display: flex; gap: 8px; align-items: center; }
+.preview .digits div { background: #fff; border-radius: 10px; padding: 8px 10px; min-width: 56px; box-shadow: 0 6px 16px rgba(30, 40, 110, .1); }
+.preview .digits b { display: block; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.preview .digits small { font-size: 8.5px; letter-spacing: .2em; color: #6a7090; font-weight: 700; }
+.login { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.login .card { width: min(400px, 100%); padding: 28px 26px; display: flex; flex-direction: column; gap: 16px; }
+.login .word { font-weight: 800; font-style: italic; font-size: 28px; color: var(--navy-text); letter-spacing: -.02em; }
+.login .word span { color: var(--text); }
+.err-text { color: var(--bad); font-size: 13px; min-height: 18px; }
+.spin { width: 16px; height: 16px; border: 2px solid var(--line-2); border-top-color: var(--navy-text); border-radius: 50%; animation: rot .7s linear infinite; display: inline-block; }
+@keyframes rot { to { transform: rotate(360deg); } }
+.loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 60px; color: var(--muted); }
+.link-btn { border: 0; background: none; color: var(--navy-text); cursor: pointer; padding: 0; font-weight: 600; }
+.link-btn:hover { text-decoration: underline; }
+.recent { display: flex; flex-direction: column; }
+.recent button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 10px 2px; cursor: pointer; align-items: center; }
+.recent button:hover { background: var(--surface-2); }
+.recent button:last-child { border-bottom: 0; }
+.recent .bar { grid-column: 1 / -1; }
+.scard { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.scard:last-child { border-bottom: 0; }
+.scard .ic { margin-top: 2px; color: var(--navy-text); width: 22px; height: 22px; }
+.scard .t { font-weight: 700; } .scard .d { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.scard .btn { margin-left: auto; }
+.session { display: flex; flex-direction: column; gap: 10px; }
+.session .big { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+@media (max-width: 900px) {
+  .shell, .shell.collapsed { grid-template-columns: minmax(0, 1fr); }
+  .side { position: fixed; left: 0; top: 0; bottom: 0; width: 280px; transform: translateX(-105%); transition: transform .2s; box-shadow: none; padding-left: env(safe-area-inset-left, 0px); }
+  .shell.nav-open .side { transform: none; box-shadow: 10px 0 40px rgba(0, 0, 0, .2); }
+  .shell.collapsed .brand .word, .shell.collapsed .nav .lbl, .shell.collapsed .nav .cnt, .shell.collapsed .nav .sect, .shell.collapsed .nav .sub { display: revert; }
+  .brand .collapse { display: none; }
+  .top .burger { display: flex; }
+  .top .clock { display: none; }
+  .nav-scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 25; }
+  .modal.wide { height: calc(100vh - 24px); }
+  .scrim { padding: 12px; }
+  .steps .s span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="root"><div class="loading"><span class="spin"></span> Memuat ProktorLab…</div></div>
+<div id="layer"></div>
+<div class="toasts" id="toasts"></div>
+<script src="config.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* =============================== DATA TETAP =============================== */
+var SCRIPTS = [
+  { id: 'run_exam', name: '#Run ExamBrowser', icon: 'play', win: 60,
+    desc: 'Membuka aplikasi Exam Browser di endpoint terpilih secara bersamaan, di akun Windows yang sedang login.' },
+  { id: 'close_exam', name: '#Close ExamBrowser', icon: 'stop', win: 60,
+    desc: 'Menutup paksa semua proses Exam Browser yang sedang berjalan.' },
+  { id: 'wol', name: '#Power ON', sub: 'Wake On Lan', icon: 'zap', win: 15,
+    desc: 'Menyalakan komputer yang mati lewat magic packet. Sinyal dikirim oleh komputer lain yang sedang online di jaringan yang sama.' },
+  { id: 'shutdown', name: '#Shutdown', icon: 'power', win: 15,
+    desc: 'shutdown.exe /s /f /t 5 — mematikan komputer secara paksa.' },
+  { id: 'restart', name: '#Restart', icon: 'rotate', win: 15,
+    desc: 'shutdown.exe /r /f /t 5 — memulai ulang komputer.' },
+  { id: 'logoff', name: '#Log Off', icon: 'logout', win: 15,
+    desc: 'Keluar dari akun Windows yang sedang login. Aplikasi yang terbuka ikut ditutup.' },
+  { id: 'lock', name: '#Kunci Layar', icon: 'lock', win: 15,
+    desc: 'Mengunci layar Windows, sama seperti menekan Win + L.' },
+  { id: 'message', name: '#Kirim Pesan', icon: 'message', win: 30,
+    desc: 'Menampilkan pesan pop-up di layar siswa, misalnya pengumuman waktu ujian.',
+    params: [{ key: 'text', label: 'Isi pesan', type: 'textarea', ph: 'Contoh: Ujian sesi 1 dimulai 5 menit lagi. Silakan login ke Exam Browser.' }] },
+  { id: 'open_url', name: '#Buka Situs', icon: 'globe', win: 30,
+    desc: 'Membuka alamat web di browser bawaan komputer.',
+    params: [{ key: 'url', label: 'Alamat URL', type: 'text', ph: 'https://' }] },
+  { id: 'update_agent', name: '#Perbarui Agen', icon: 'refresh', win: 120,
+    desc: 'Mengunduh ulang agen ProktorLab terbaru dari server ini, lalu memulai ulang agen.' }
+];
+var SCRIPT = {};
+SCRIPTS.forEach(function (s) { SCRIPT[s.id] = s; });
+
+var PRESETS = {
+  seb: { label: 'Safe Exam Browser', path: 'C:\\Program Files\\SafeExamBrowser\\Application\\SafeExamBrowser.exe', args: '', proc: 'SafeExamBrowser*' },
+  exambro: { label: 'Exam Browser (.exe lain)', path: 'C:\\Program Files\\ExamBrowser\\ExamBrowser.exe', args: '', proc: 'ExamBrowser' },
+  chrome: { label: 'Google Chrome mode kiosk', path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', args: '--kiosk --incognito https://cbt.sekolah.sch.id', proc: 'chrome' },
+  edge: { label: 'Microsoft Edge mode kiosk', path: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', args: '--kiosk https://cbt.sekolah.sch.id --edge-kiosk-type=fullscreen --no-first-run', proc: 'msedge' },
+  custom: { label: 'Kustom (isi sendiri)', path: '', args: '', proc: '' }
+};
+
+var TZ = {
+  'Asia/Jakarta': { label: 'WIB', off: 7 },
+  'Asia/Makassar': { label: 'WITA', off: 8 },
+  'Asia/Jayapura': { label: 'WIT', off: 9 }
+};
+var HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+var BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+var NEW_GROUP = 'Endpoint Baru';
+var PENDING = ['Menunggu', 'Diterima'];
+var ST_ORDER = ['Berhasil', 'Gagal', 'Diterima', 'Menunggu', 'Kedaluwarsa', 'Dibatalkan'];
+
+/* =============================== IKON =============================== */
+var ICONS = {
+  dash: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  network: '<rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M5 16v-3h14v3M12 8v5"/>',
+  tv: '<rect x="2" y="5" width="20" height="13" rx="2"/><path d="m7 22 2-4M17 22l-2-4"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
+  zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+  power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+  rotate: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 3"/>',
+  code: '<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16"/>',
+  chevD: '<path d="m6 9 6 6 6-6"/>',
+  chevL: '<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  ext: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>',
+  trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
+  edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  bug: '<rect x="8" y="6" width="8" height="14" rx="4"/><path d="M19 7l-3 2M5 7l3 2M19 13h-3M5 13h3M19 19l-3-2M5 19l3-2M10 4l1 2M14 4l-1 2"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'
+};
+function icon(name, cls) {
+  return '<svg class="ic' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || '') + '</svg>';
+}
+
+/* =============================== UTIL =============================== */
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function $(sel, el) { return (el || document).querySelector(sel); }
+function $$(sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); }
+function pad(n) { return String(n).padStart(2, '0'); }
+function natCmp(a, b) { return String(a).localeCompare(String(b), 'id', { numeric: true, sensitivity: 'base' }); }
+function lsGet(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+function now() { return Date.now() + (S.offset || 0); }
+function tzInfo() { return TZ[(S.settings && S.settings.tz) || 'Asia/Makassar'] || TZ['Asia/Makassar']; }
+function zp(ms) {
+  var d = new Date(ms + tzInfo().off * 3600000);
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds(), dow: d.getUTCDay() };
+}
+function zEpoch(dateStr, timeStr) {
+  var a = String(dateStr).split('-').map(Number), b = String(timeStr || '00:00').split(':').map(Number);
+  return Date.UTC(a[0], a[1] - 1, a[2], b[0] || 0, b[1] || 0) - tzInfo().off * 3600000;
+}
+function zDateStr(ms) { var p = zp(ms); return p.y + '-' + pad(p.m) + '-' + pad(p.d); }
+function zTimeStr(ms) { var p = zp(ms); return pad(p.h) + ':' + pad(p.mi); }
+function fTime(ms) { return ms ? zTimeStr(ms) : '-'; }
+function fDT(ms) {
+  if (!ms) return '-';
+  var p = zp(ms), t = zp(now());
+  var same = p.y === t.y && p.m === t.m && p.d === t.d;
+  return (same ? 'Hari ini' : p.d + ' ' + BULAN[p.m - 1].slice(0, 3) + ' ' + p.y) + ', ' + pad(p.h) + ':' + pad(p.mi);
+}
+function fLong(ms) { var p = zp(ms); return HARI[p.dow] + ', ' + p.d + ' ' + BULAN[p.m - 1] + ' ' + p.y; }
+function ago(ms) {
+  if (!ms) return 'belum pernah';
+  var s = Math.round((now() - ms) / 1000);
+  if (s < 10) return 'baru saja';
+  if (s < 60) return s + ' detik lalu';
+  if (s < 3600) return Math.floor(s / 60) + ' menit lalu';
+  if (s < 86400) return Math.floor(s / 3600) + ' jam lalu';
+  return Math.floor(s / 86400) + ' hari lalu';
+}
+function dur(ms) {
+  var s = Math.max(0, Math.round(ms / 1000));
+  var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + ' jam ' : '') + (h || m ? m + ' menit ' : '') + (h ? '' : x + ' detik');
+}
+function toast(msg, err) {
+  var el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : '');
+  el.innerHTML = icon(err ? 'alert' : 'check', 'sm') + '<span>' + esc(msg) + '</span>';
+  $('#toasts').appendChild(el);
+  setTimeout(function () { el.remove(); }, err ? 6000 : 3500);
+}
+function copyText(text, okMsg) {
+  var done = function () { toast(okMsg || 'Disalin ke papan klip.'); };
+  var fallback = function () {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    if (ok) done(); else toast('Tidak bisa menyalin otomatis. Blok teksnya lalu salin manual.', true);
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  } catch (e) { fallback(); }
+}
+function effCounts(job) {
+  var c = Object.assign({}, job.counts || {});
+  if (job.dl && now() > job.dl && job.status !== 'Dibatalkan') {
+    PENDING.forEach(function (k) { if (c[k]) { c.Kedaluwarsa = (c.Kedaluwarsa || 0) + c[k]; delete c[k]; } });
+  }
+  return c;
+}
+function effStatus(row, job) {
+  if (PENDING.indexOf(row.status) >= 0 && job.dl && now() > job.dl) return 'Kedaluwarsa';
+  return row.status;
+}
+function jobState(job) {
+  if (job.status === 'Dibatalkan') return 'Dibatalkan';
+  var c = effCounts(job);
+  var pend = (c.Menunggu || 0) + (c.Diterima || 0);
+  if (pend && job.at > now()) return 'Terjadwal';
+  if (pend) return 'Berjalan';
+  return 'Selesai';
+}
+function barHtml(c, total) {
+  total = total || ST_ORDER.reduce(function (a, k) { return a + (c[k] || 0); }, 0) || 1;
+  return '<div class="bar">' + ['Berhasil', 'Gagal', 'Diterima', 'Kedaluwarsa', 'Dibatalkan'].map(function (k) {
+    return c[k] ? '<i class="' + k + '" style="width:' + (c[k] / total * 100).toFixed(2) + '%"></i>' : '';
+  }).join('') + '</div>';
+}
+
+/* =============================== API =============================== */
+/* Alamat backend (URL Aplikasi Web Apps Script .../exec). Urutan: ?api= di alamat,
+   lalu yang tersimpan di browser ini, lalu config.js. */
+var CFG = window.PROKTORLAB_CONFIG || {};
+var QS = new URLSearchParams(location.search);
+if (QS.get('api')) lsSet('pl_api', QS.get('api').trim());
+var API = String(QS.get('api') || lsGet('pl_api', '') || CFG.apiUrl || '').trim();
+var IS_LIVE = false;
+var S = {
+  token: null, offset: 0, settings: null, groups: [], endpoints: [], layar: null, url: '', key: '', installUrl: '', version: '',
+  view: { name: 'dash' }, navOpen: false, collapsed: lsGet('pl_collapsed', false), epOpen: true,
+  sel: {}, sort: { key: 'name', dir: 1 }, filt: { q: '', st: '', ex: '', os: '' }, page: 1, pageSize: lsGet('pl_pagesize', 200),
+  jobs: [], job: null, quickGroup: lsGet('pl_quick_group', '')
+};
+
+function call(action, data) {
+  if (!IS_LIVE) return Demo.call(action, data);
+  // body berupa teks biasa -> "simple request" tanpa preflight CORS, cocok untuk Apps Script
+  return fetch(API, { method: 'POST', redirect: 'follow', body: JSON.stringify({ action: action, data: data || {}, token: S.token }) })
+    .then(function (r) { return r.text(); }, function () {
+      throw new Error('Tidak bisa menghubungi backend. Periksa internet, URL Apps Script, dan akses deployment "Siapa saja".');
+    })
+    .then(function (t) {
+      var j;
+      try { j = JSON.parse(t); } catch (e) { throw new Error('Jawaban backend tidak valid. Pastikan URL berakhiran /exec dan deployment diatur "Siapa saja".'); }
+      if (!j.ok) {
+        if (j.error === 'AUTH') {
+          if (action !== 'logout') showLogin();
+          throw new Error('Sesi berakhir, silakan masuk lagi.');
+        }
+        throw new Error(j.error || 'Terjadi kesalahan di backend.');
+      }
+      return j.data;
+    });
+}
+function apiGet(url, params) {
+  var q = Object.keys(params).map(function (k) { return k + '=' + encodeURIComponent(params[k]); }).join('&');
+  return fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + q, { redirect: 'follow' }).then(function (r) { return r.json(); });
+}
+function act(action, data, okMsg) {
+  return call(action, data).then(function (r) { if (okMsg) toast(okMsg); return r; }, function (e) { toast(e.message, true); throw e; });
+}
+
+/* =============================== DEMO =============================== */
+var Demo = (function () {
+  var st = null;
+  var DEMO_KEY = 'demo0a1b2c3d4e5f60718293a4b5c6d7e8f9';
+  function seed() {
+    var t = Date.now();
+    var eps = [];
+    var macN = 16;
+    function mk(id, group, opt) {
+      opt = opt || {};
+      macN++;
+      eps.push({
+        id: id, name: id, group: group, comment: opt.comment || '', user: opt.user != null ? opt.user : id + '\\Siswa Ujian',
+        loggedIn: opt.user !== '', ip: '192.168.10.' + (macN + 10), mac: 'D8:BB:C1:4A:' + pad(Math.floor(macN / 10)) + ':' + pad(macN % 100).slice(-2),
+        bc: '192.168.10.255', os: 'Windows 11 Pro (24H2)', ver: '1.0.0', online: !opt.off, exam: false,
+        seen: opt.off ? t - 3600000 * 17 : t - Math.random() * 8000, reg: t - 86400000 * 12
+      });
+    }
+    ['A', 'B', 'C'].forEach(function (row) {
+      var n = row === 'B' ? 9 : 7;
+      for (var i = 1; i <= n; i++) {
+        var id = row + '-' + pad(i);
+        mk(id, 'Lab TJKT 1', { off: id === 'B-05' || id === 'C-07', comment: id === 'A-04' ? 'Mouse kadang macet' : '' });
+      }
+    });
+    for (var j = 1; j <= 6; j++) mk('L2-' + pad(j), 'Lab TJKT 2', { off: true });
+    mk('PROKTOR-01', 'Ruang Proktor', { user: 'PROKTOR-01\\Proktor', comment: 'PC proktor (pengirim WOL)' });
+    mk('LAPTOP-GURU', NEW_GROUP, { user: 'LAPTOP-GURU\\Guru KKA' });
+    var lay = lsGet('pl_demo_layar', null);
+    if (!lay) {
+      var q = 15 * 60000;
+      lay = { label: 'TES KEMAMPUAN AKADEMIK', school: 'SMKN 1 Murung Pudak', sub: 'Harap Senang Ada Ujian \uD83D\uDE0A', sesi: 'SESI 1', token: '', start: Math.ceil((t + 12 * 60000) / q) * q, end: 0 };
+    }
+    st = {
+      settings: { school: 'SMKN 1 Murung Pudak', tz: 'Asia/Makassar', interval: 10, examPreset: 'seb',
+        examPath: PRESETS.seb.path, examArgs: '', examProc: PRESETS.seb.proc, groups: [NEW_GROUP, 'Lab TJKT 1', 'Lab TJKT 2', 'Ruang Proktor'], defaultGroup: NEW_GROUP },
+      eps: eps, jobs: [], rows: {}, layar: lay, key: DEMO_KEY
+    };
+    // contoh riwayat
+    var j1 = mkJob('close_exam', ['A-01', 'A-02', 'A-03', 'A-04', 'A-05', 'A-06', 'A-07'], t - 3600000 * 3, 60, {});
+    st.rows[j1.id].forEach(function (r) { r.status = 'Berhasil'; r.msg = 'Exam Browser ditutup (2 proses).'; r.t = t - 3600000 * 3 + 4000; });
+    j1.created = t - 3600000 * 3;
+    persistLayar();
+  }
+  function ep(id) { for (var i = 0; i < st.eps.length; i++) if (st.eps[i].id === id) return st.eps[i]; return null; }
+  function groups() {
+    var set = {};
+    st.settings.groups.forEach(function (g) { set[g] = 1; });
+    set[NEW_GROUP] = 1;
+    st.eps.forEach(function (e) { set[e.group] = 1; });
+    return Object.keys(set).sort(function (a, b) { return a === NEW_GROUP ? -1 : b === NEW_GROUP ? 1 : natCmp(a, b); });
+  }
+  function persistLayar() { lsSet('pl_demo_layar', Object.assign({ tz: st.settings.tz }, st.layar)); }
+  function mkJob(action, targets, at, winMin, params) {
+    var id = 'J' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 90 + 10);
+    var dl = Math.max(at, Date.now()) + winMin * 60000;
+    var job = { id: id, script: SCRIPT[action].name, action: action, params: params || {}, total: targets.length, at: at, dl: dl, created: Date.now(), status: 'Aktif' };
+    st.jobs.unshift(job);
+    st.rows[id] = targets.map(function (t) { return { ep: t, status: 'Menunggu', msg: at > Date.now() + 5000 ? 'Dijadwalkan.' : 'Menunggu endpoint melapor...', t: Date.now() }; });
+    return job;
+  }
+  function setRow(job, epId, status, msg) {
+    var rows = st.rows[job.id] || [];
+    rows.forEach(function (r) { if (r.ep === epId && (PENDING.indexOf(r.status) >= 0 || status === 'Berhasil')) { r.status = status; r.msg = msg; r.t = Date.now(); } });
+  }
+  function execute(job, epId) {
+    var e = ep(epId);
+    if (!e || job.status === 'Dibatalkan') return;
+    var row = (st.rows[job.id] || []).filter(function (r) { return r.ep === epId; })[0];
+    if (!row || PENDING.indexOf(row.status) < 0) return;
+    if (!e.online) return;
+    if (Date.now() > job.dl) { setRow(job, epId, 'Kedaluwarsa', 'Melewati batas waktu penyelesaian.'); return; }
+    var user = e.loggedIn ? e.user : '';
+    var noUser = 'Tidak ada pengguna yang sedang login di komputer ini.';
+    switch (job.action) {
+      case 'run_exam':
+        if (!user) return setRow(job, epId, 'Gagal', noUser);
+        if (e.exam) return setRow(job, epId, 'Berhasil', 'Exam Browser sudah berjalan.');
+        e.exam = true; return setRow(job, epId, 'Berhasil', 'Exam Browser dibuka untuk ' + user + '.');
+      case 'close_exam':
+        if (!e.exam) return setRow(job, epId, 'Berhasil', 'Tidak ada Exam Browser yang berjalan.');
+        e.exam = false; return setRow(job, epId, 'Berhasil', 'Exam Browser ditutup (2 proses).');
+      case 'shutdown':
+        setRow(job, epId, 'Berhasil', 'Komputer dimatikan.');
+        setTimeout(function () { e.online = false; e.exam = false; e.seen = Date.now(); }, 1500); return;
+      case 'restart':
+        setRow(job, epId, 'Berhasil', 'Komputer dimulai ulang.');
+        setTimeout(function () { e.online = false; e.exam = false; }, 1500);
+        setTimeout(function () { e.online = true; e.seen = Date.now(); pump(); }, 14000 + Math.random() * 6000); return;
+      case 'logoff':
+        if (!user) return setRow(job, epId, 'Gagal', noUser);
+        e.exam = false; e.loggedIn = false; setRow(job, epId, 'Berhasil', 'Log off dikirim ke ' + user + '.');
+        setTimeout(function () { e.loggedIn = true; }, 20000); return;
+      case 'lock':
+        if (!user) return setRow(job, epId, 'Gagal', noUser);
+        return setRow(job, epId, 'Berhasil', 'Layar dikunci (' + user + ').');
+      case 'message':
+        if (!user) return setRow(job, epId, 'Gagal', noUser);
+        return setRow(job, epId, 'Berhasil', 'Pesan ditampilkan ke ' + user + '.');
+      case 'open_url':
+        if (!user) return setRow(job, epId, 'Gagal', noUser);
+        return setRow(job, epId, 'Berhasil', 'Situs dibuka untuk ' + user + '.');
+      case 'update_agent':
+        e.ver = '1.0.0'; return setRow(job, epId, 'Berhasil', 'Agen diperbarui, memulai ulang agen...');
+    }
+  }
+  function pump() {
+    var t = Date.now();
+    st.jobs.forEach(function (job) {
+      if (job.status === 'Dibatalkan' || job.action === 'wol') return;
+      (st.rows[job.id] || []).forEach(function (r) {
+        if (PENDING.indexOf(r.status) < 0) return;
+        var e = ep(r.ep);
+        if (!e || !e.online || t > job.dl) return;
+        if (r._q) return;
+        if (job.at > t) {
+          if (r.status === 'Menunggu') { r.status = 'Diterima'; r.msg = 'Diterima, menunggu waktu jadwal.'; r.t = t; }
+          return;
+        }
+        r._q = 1;
+        setTimeout(function () {
+          if (r.status === 'Menunggu') { r.status = 'Diterima'; r.msg = 'Sedang dijalankan...'; r.t = Date.now(); }
+          setTimeout(function () { r._q = 0; execute(job, r.ep); }, 400 + Math.random() * 1600);
+        }, 300 + Math.random() * 1500);
+      });
+    });
+  }
+  setInterval(function () {
+    if (!st) return;
+    st.eps.forEach(function (e) { if (e.online) e.seen = Date.now() - Math.random() * 6000; });
+    pump();
+  }, 1000);
+  function wol(job, targets) {
+    var relay = st.eps.filter(function (e) { return e.online && targets.indexOf(e.id) < 0; })
+      .sort(function (a) { return a.group === 'Ruang Proktor' ? -1 : 1; })[0];
+    if (!relay) {
+      targets.forEach(function (t) { setRow(job, t, 'Gagal', 'Tidak ada komputer lain yang online untuk mengirim sinyal Wake on LAN.'); });
+      return;
+    }
+    (st.rows[job.id] || []).forEach(function (r) { r.msg = 'Menunggu dikirim lewat ' + relay.id + '...'; });
+    var go = function () {
+      if (job.status === 'Dibatalkan') return;
+      targets.forEach(function (t) {
+        setRow(job, t, 'Berhasil', 'Magic packet dikirim oleh ' + relay.id + ' ke ' + targets.length + ' komputer.');
+        var e = ep(t);
+        if (e && !e.online) setTimeout(function () { e.online = true; e.loggedIn = true; e.seen = Date.now(); pump(); }, 7000 + Math.random() * 9000);
+      });
+    };
+    setTimeout(go, Math.max(0, job.at - Date.now()) + 1200);
+  }
+  var H = {
+    status: function () { return { hasPassword: true, version: '1.0.0', school: st.settings.school }; },
+    login: function () { return { token: 'demo' }; },
+    setup: function () { return { token: 'demo' }; },
+    boot: function () {
+      return { version: '1.0.0', settings: st.settings, groups: groups(), endpoints: H.endpoints().endpoints, layar: st.layar,
+        url: 'https://script.google.com/macros/s/AKfycbx-CONTOH-URL-WEB-APP/exec', key: st.key,
+        installUrl: 'https://script.google.com/macros/s/AKfycbx-CONTOH-URL-WEB-APP/exec?f=install&k=' + st.key, now: Date.now() };
+    },
+    endpoints: function () { return { endpoints: st.eps.map(function (e) { return Object.assign({}, e, { user: e.loggedIn || !e.online ? e.user : '' }); }), now: Date.now() }; },
+    createJob: function (d) {
+      var targets = (d.targets || []).filter(function (t) { return ep(t); });
+      if (!targets.length) throw new Error('Pilih minimal satu endpoint.');
+      if (d.action === 'message' && !(d.params && String(d.params.text || '').trim())) throw new Error('Isi pesan wajib diisi.');
+      if (d.action === 'open_url' && !/^https?:\/\//i.test((d.params && d.params.url) || '')) throw new Error('URL harus diawali http:// atau https://');
+      var at = Number(d.runAt) > 0 ? Number(d.runAt) : Date.now();
+      if (at < Date.now() - 120000) throw new Error('Waktu jadwal sudah lewat.');
+      var job = mkJob(d.action, targets, at, Number(d.windowMin) || 60, d.params || {});
+      if (d.action === 'wol') wol(job, targets); else pump();
+      return { id: job.id };
+    },
+    jobs: function () {
+      return { jobs: st.jobs.map(function (j) {
+        var c = {};
+        (st.rows[j.id] || []).forEach(function (r) { c[r.status] = (c[r.status] || 0) + 1; });
+        return Object.assign({}, j, { counts: c });
+      }), now: Date.now() };
+    },
+    job: function (d) {
+      var j = st.jobs.filter(function (x) { return x.id === d.id; })[0];
+      if (!j) throw new Error('Otomasi tidak ditemukan.');
+      var c = {};
+      var rows = (st.rows[j.id] || []).map(function (r) {
+        c[r.status] = (c[r.status] || 0) + 1;
+        var e = ep(r.ep);
+        return { ep: r.ep, status: r.status, msg: r.msg, t: r.t, group: e ? e.group : '-', online: !!(e && e.online) };
+      });
+      return { job: Object.assign({}, j, { counts: c }), rows: rows, now: Date.now() };
+    },
+    cancelJob: function (d) {
+      var j = st.jobs.filter(function (x) { return x.id === d.id; })[0];
+      if (j) { j.status = 'Dibatalkan'; (st.rows[j.id] || []).forEach(function (r) { if (PENDING.indexOf(r.status) >= 0) { r.status = 'Dibatalkan'; r.msg = 'Dibatalkan oleh proktor.'; r.t = Date.now(); } }); }
+      return { ok: true };
+    },
+    clearHistory: function () { st.jobs = []; st.rows = {}; return { ok: true }; },
+    saveSettings: function (d) {
+      ['school', 'tz', 'examPreset', 'examPath', 'examArgs', 'examProc', 'defaultGroup'].forEach(function (k) { if (d[k] != null) st.settings[k] = String(d[k]); });
+      if (d.interval != null) st.settings.interval = Math.min(120, Math.max(5, Math.round(Number(d.interval) || 10)));
+      persistLayar();
+      return { settings: st.settings };
+    },
+    saveLayar: function (d) {
+      ['label', 'school', 'sub', 'sesi', 'token'].forEach(function (k) { if (d[k] != null) st.layar[k] = String(d[k]); });
+      if (d.start != null) st.layar.start = Number(d.start) || 0;
+      if (d.end != null) st.layar.end = Number(d.end) || 0;
+      persistLayar();
+      return { layar: st.layar };
+    },
+    moveEndpoints: function (d) {
+      (d.ids || []).forEach(function (id) { var e = ep(id); if (e) e.group = d.group; });
+      if (st.settings.groups.indexOf(d.group) < 0) st.settings.groups.push(d.group);
+      return { ok: true };
+    },
+    setComment: function (d) { var e = ep(d.id); if (e) e.comment = String(d.comment || ''); return { ok: true }; },
+    deleteEndpoints: function (d) { st.eps = st.eps.filter(function (e) { return (d.ids || []).indexOf(e.id) < 0; }); return { ok: true }; },
+    createGroup: function (d) {
+      var n = String(d.name || '').trim();
+      if (!n) throw new Error('Nama grup kosong.');
+      if (st.settings.groups.indexOf(n) < 0) st.settings.groups.push(n);
+      return { groups: groups() };
+    },
+    renameGroup: function (d) {
+      var to = String(d.to || '').trim();
+      if (!to) throw new Error('Nama grup baru kosong.');
+      if (d.from === NEW_GROUP) throw new Error('Grup "' + NEW_GROUP + '" tidak bisa diganti namanya.');
+      st.eps.forEach(function (e) { if (e.group === d.from) e.group = to; });
+      st.settings.groups = st.settings.groups.map(function (g) { return g === d.from ? to : g; });
+      if (st.settings.groups.indexOf(to) < 0) st.settings.groups.push(to);
+      return { groups: groups() };
+    },
+    deleteGroup: function (d) {
+      if (d.name === NEW_GROUP) throw new Error('Grup "' + NEW_GROUP + '" tidak bisa dihapus.');
+      st.eps.forEach(function (e) { if (e.group === d.name) e.group = NEW_GROUP; });
+      st.settings.groups = st.settings.groups.filter(function (g) { return g !== d.name; });
+      return { groups: groups() };
+    },
+    regenKey: function () {
+      st.key = 'demo' + Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2);
+      return { key: st.key, installUrl: 'https://script.google.com/macros/s/AKfycbx-CONTOH-URL-WEB-APP/exec?f=install&k=' + st.key };
+    },
+    changePassword: function () { return { ok: true }; },
+    agentCode: function () {
+      return fetch('agent/agent.ps1').then(function (r) { if (!r.ok) throw new Error('x'); return r.text(); })
+        .then(function (code) { return { code: code }; }, function () { return { code: '# Kode agen tersedia di menu Panduan & Kode.' }; });
+    },
+    logout: function () { return { ok: true }; }
+  };
+  return {
+    call: function (action, data) {
+      if (!st) seed();
+      return new Promise(function (resolve, reject) {
+        setTimeout(function () {
+          try {
+            if (!H[action]) throw new Error('Aksi tidak dikenal: ' + action);
+            var r = H[action](data || {});
+            Promise.resolve(r).then(function (v) { resolve(JSON.parse(JSON.stringify(v))); }, reject);
+          } catch (e) { reject(e); }
+        }, 120 + Math.random() * 180);
+      });
+    }
+  };
+})();
+
+/* =============================== LOGIN =============================== */
+function showLogin() {
+  stopPolling();
+  S.token = null;
+  lsDel('pl_token');
+  closeLayer();
+  call('status').then(function (st) {
+    var first = !st.hasPassword;
+    $('#root').innerHTML =
+      '<div class="login"><form class="card" id="login-form" autocomplete="on">' +
+      '<div><div class="word">Proktor<span>Lab</span></div><div class="muted">' + esc(st.school || 'Panel Proktor') + '</div></div>' +
+      '<div><h2 style="margin:0 0 4px;font-size:18px">' + (first ? 'Buat kata sandi admin' : 'Masuk ke Panel Proktor') + '</h2>' +
+      '<div class="muted" style="font-size:13px">' + (first ? 'Ini pertama kali panel dibuka. Kata sandi ini dipakai semua proktor untuk masuk.' : 'Masukkan kata sandi admin.') + '</div></div>' +
+      '<label class="f">Kata sandi<input class="inp" type="password" id="lg-pw" autocomplete="' + (first ? 'new-password' : 'current-password') + '" required minlength="' + (first ? 6 : 1) + '"></label>' +
+      (first ? '<label class="f">Ulangi kata sandi<input class="inp" type="password" id="lg-pw2" autocomplete="new-password" required></label>' : '') +
+      '<div class="err-text" id="lg-err"></div>' +
+      '<button class="btn big" type="submit" id="lg-btn">' + (first ? 'Simpan & masuk' : 'Masuk') + '</button></form></div>';
+    $('#lg-pw').focus();
+    $('#login-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var pw = $('#lg-pw').value;
+      if (first && pw !== $('#lg-pw2').value) { $('#lg-err').textContent = 'Kedua kata sandi tidak sama.'; return; }
+      if (first && pw.length < 6) { $('#lg-err').textContent = 'Kata sandi minimal 6 karakter.'; return; }
+      $('#lg-btn').disabled = true;
+      $('#lg-err').textContent = '';
+      call(first ? 'setup' : 'login', { password: pw }).then(function (r) {
+        S.token = r.token; lsSet('pl_token', r.token); boot();
+      }, function (err) {
+        $('#lg-btn').disabled = false; $('#lg-err').textContent = err.message;
+      });
+    });
+  }, function (e) {
+    $('#root').innerHTML = '<div class="login"><div class="card"><b>Gagal terhubung ke backend.</b><div class="muted">' + esc(e.message) + '</div>' +
+      '<div class="mono muted" style="overflow-wrap:anywhere">' + esc(API) + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="lg-retry">Coba lagi</button><button class="btn ghost" data-act="connect">Ganti URL backend</button></div></div></div>';
+    $('#lg-retry').onclick = showLogin;
+  });
+}
+
+/* =============================== HUBUNGKAN BACKEND =============================== */
+function showConnect(msg) {
+  stopPolling();
+  closeLayer();
+  $('#root').innerHTML =
+    '<div class="login"><form class="card" id="cn-form" style="width:min(480px,100%)">' +
+    '<div><div class="word">Proktor<span>Lab</span></div><div class="muted">Panel proktor lab komputer</div></div>' +
+    '<div><h2 style="margin:0 0 4px;font-size:18px">Hubungkan ke backend</h2>' +
+    '<div class="muted" style="font-size:13px">Tempel URL Aplikasi Web Google Apps Script milik sekolah (berakhiran <span class="mono">/exec</span>). Cukup sekali per perangkat.</div></div>' +
+    '<label class="f">URL backend<input class="inp mono" id="cn-url" inputmode="url" autocomplete="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(API) + '"></label>' +
+    '<div class="err-text" id="cn-err">' + esc(msg || '') + '</div>' +
+    '<button class="btn big" type="submit" id="cn-btn">Hubungkan</button>' +
+    '<div style="display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;font-size:13.5px">' +
+    '<button type="button" class="link-btn" id="cn-demo">Coba mode demo</button>' +
+    '<button type="button" class="link-btn" id="cn-guide">Panduan pemasangan & kode</button></div></form></div>';
+  $('#cn-url').focus();
+  $('#cn-demo').onclick = function () { startDemo(); };
+  $('#cn-guide').onclick = function () { startDemo('guide'); };
+  $('#cn-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var url = $('#cn-url').value.trim();
+    if (!/^https?:\/\/\S+\/exec$/.test(url)) { $('#cn-err').textContent = 'URL harus lengkap dan berakhiran /exec (bukan /dev).'; return; }
+    $('#cn-btn').disabled = true;
+    $('#cn-err').textContent = '';
+    apiGet(url, { action: 'ping' }).then(function (j) {
+      if (!j || !j.ok || !j.data || j.data.app !== 'ProktorLab') throw new Error('x');
+      API = url;
+      lsSet('pl_api', url);
+      lsDel('pl_token');
+      startLive();
+    }).catch(function () {
+      $('#cn-btn').disabled = false;
+      $('#cn-err').textContent = 'Backend tidak menjawab. Cek URL, pastikan sudah di-Terapkan sebagai Aplikasi web dengan akses "Siapa saja".';
+    });
+  });
+}
+function startDemo(view) {
+  IS_LIVE = false;
+  S.token = 'demo';
+  if (view) lsSet('pl_view', { name: view });
+  boot();
+}
+function startLive() {
+  IS_LIVE = true;
+  S.token = lsGet('pl_token', null);
+  if (S.token) boot(); else showLogin();
+}
+
+/* =============================== BOOT =============================== */
+function boot() {
+  $('#root').innerHTML = '<div class="loading"><span class="spin"></span> Memuat data lab…</div>';
+  call('boot').then(function (b) {
+    S.offset = b.now - Date.now();
+    S.settings = b.settings; S.groups = b.groups; S.endpoints = b.endpoints; S.layar = b.layar;
+    S.url = b.url; S.key = b.key; S.installUrl = b.installUrl; S.version = b.version;
+    var last = lsGet('pl_view', null);
+    if (last && last.name && last.name !== 'job' && VIEWS[last.name]) S.view = last;
+    renderShell();
+    go(S.view.name, S.view, true);
+    startPolling();
+  }, function (e) {
+    if (!S.token && IS_LIVE) return;
+    $('#root').innerHTML = '<div class="login"><div class="card"><b>Gagal memuat panel.</b><div class="muted">' + esc(e.message) + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="retry">Coba lagi</button>' + (IS_LIVE ? '<button class="btn ghost" data-act="connect">Ganti URL backend</button>' : '') + '</div></div></div>';
+    $('#retry').onclick = boot;
+  });
+}
+
+/* =============================== SHELL =============================== */
+function epCount(group) {
+  return S.endpoints.filter(function (e) { return !group || e.group === group; }).length;
+}
+function renderShell() {
+  var demo = !IS_LIVE ? '<div class="demo-bar"><b>Mode demo.</b> Data di bawah adalah simulasi 32 komputer lab. Untuk mengendalikan komputer sungguhan, pasang backend di Google Apps Script lalu hubungkan. <button data-act="go" data-v="guide">Lihat panduan & kode</button> <button data-act="connect">Hubungkan ke backend</button></div>' : '';
+  $('#root').innerHTML = demo +
+    '<div class="shell' + (S.collapsed ? ' collapsed' : '') + '" id="shell">' +
+    '<aside class="side" id="side"></aside>' +
+    '<div class="main"><header class="top" id="top"></header><main class="content" id="view"></main></div>' +
+    '</div>';
+  renderSide();
+  renderTop();
+}
+function navBtn(view, ico, label, extra, on) {
+  return '<button data-act="go" data-v="' + view + '"' + (extra || '') + ' class="' + (on ? 'on' : '') + '" title="' + esc(label) + '">' + icon(ico) + '<span class="lbl">' + esc(label) + '</span></button>';
+}
+function renderSide() {
+  var v = S.view;
+  var groupBtns = S.groups.map(function (g) {
+    var on = v.name === 'eps' && v.group === g;
+    return '<button data-act="go" data-v="eps" data-group="' + esc(g) + '" class="' + (on ? 'on' : '') + '" title="' + esc(g) + '">' +
+      '<span class="lbl">' + esc(g) + '</span><span class="cnt">' + epCount(g) + '</span></button>';
+  }).join('');
+  $('#side').innerHTML =
+    '<div class="brand"><div class="logo">' +
+    '<svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="7" fill="var(--navy)"/><rect x="6.5" y="8" width="17" height="11" rx="1.6" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 22.5h6" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path d="m13 11.2 4.6 2.3-4.6 2.3z" fill="#fff"/></svg>' +
+    '<span class="word">Proktor<span>Lab</span></span></div>' +
+    '<button class="collapse" data-act="collapse" title="Ciutkan menu">' + icon('chevL') + '</button></div>' +
+    '<nav class="nav">' +
+    navBtn('dash', 'dash', 'Dashboard', '', v.name === 'dash') +
+    '<button data-act="toggle-ep" class="' + (v.name === 'eps' && !v.group ? 'on' : '') + '" title="Endpoint">' + icon('network') + '<span class="lbl">Endpoint</span>' + icon('chevD', 'sm chev' + (S.epOpen ? ' open' : '')) + '</button>' +
+    '<div class="sub"' + (S.epOpen ? '' : ' hidden') + '>' +
+    '<button data-act="go" data-v="eps" class="' + (v.name === 'eps' && !v.group ? 'on' : '') + '"><span class="lbl">Semua endpoint</span><span class="cnt">' + epCount() + '</span></button>' +
+    groupBtns +
+    '<button data-act="new-group" class="muted">' + icon('plus', 'sm') + '<span class="lbl">Grup baru</span></button></div>' +
+    navBtn('layar', 'tv', 'Layar Ujian', '', v.name === 'layar') +
+    '<div class="sect">Otomasi</div>' +
+    '<button data-act="wizard" title="Jalankan Skrip">' + icon('play') + '<span class="lbl">Jalankan Skrip</span></button>' +
+    navBtn('jobs', 'history', 'Riwayat', '', v.name === 'jobs' || v.name === 'job') +
+    '<div class="sect">Konfigurasi</div>' +
+    navBtn('scripts', 'code', 'Pustaka Skrip', '', v.name === 'scripts') +
+    navBtn('agent', 'download', 'Pasang Agen', '', v.name === 'agent') +
+    navBtn('settings', 'sliders', 'Pengaturan', '', v.name === 'settings') +
+    navBtn('guide', 'book', 'Panduan & Kode', '', v.name === 'guide') +
+    '</nav>' +
+    '<div class="side-foot"><div class="ver"><b>' + esc(S.settings.school) + '</b><br>ProktorLab v' + esc(S.version) + '</div>' +
+    (IS_LIVE ? '<button data-act="logout">' + icon('logout', 'sm') + '<span>Keluar</span></button>' : '') + '</div>';
+}
+function renderTop() {
+  var c = crumbs();
+  var on = S.endpoints.filter(function (e) { return e.online; }).length;
+  $('#top').innerHTML =
+    '<button class="burger" data-act="burger" aria-label="Menu">' + icon('menu') + '</button>' +
+    '<div class="crumbs"><button data-act="go" data-v="dash" aria-label="Dashboard">' + icon('home', 'sm') + '</button>' +
+    c.map(function (x, i) {
+      return '<span class="sep">/</span>' + (i < c.length - 1 && x.v ? '<button data-act="go" data-v="' + x.v + '">' + esc(x.t) + '</button>' : '<span class="cur">' + esc(x.t) + '</span>');
+    }).join('') + '</div>' +
+    '<div class="right"><span class="clock" id="clock"></span><span class="pill ok" id="online-pill">' + on + '/' + S.endpoints.length + ' online</span></div>';
+  tickClock();
+}
+function tickClock() {
+  var el = $('#clock');
+  if (!el || !S.settings) return;
+  var p = zp(now());
+  el.textContent = HARI[p.dow] + ', ' + p.d + ' ' + BULAN[p.m - 1].slice(0, 3) + ' ' + p.y + ' · ' + pad(p.h) + ':' + pad(p.mi) + ' ' + tzInfo().label;
+}
+function crumbs() {
+  var v = S.view;
+  switch (v.name) {
+    case 'dash': return [{ t: 'Dashboard' }];
+    case 'eps': return v.group ? [{ t: 'Endpoint', v: 'eps' }, { t: v.group }] : [{ t: 'Endpoint' }];
+    case 'jobs': return [{ t: 'Riwayat' }];
+    case 'job': return [{ t: 'Riwayat', v: 'jobs' }, { t: S.job ? S.job.job.script : 'Detail' }];
+    case 'scripts': return [{ t: 'Pustaka Skrip' }];
+    case 'layar': return [{ t: 'Layar Ujian' }];
+    case 'agent': return [{ t: 'Pasang Agen' }];
+    case 'settings': return [{ t: 'Pengaturan' }];
+    case 'guide': return [{ t: 'Panduan & Kode' }];
+  }
+  return [];
+}
+function go(name, params, initial) {
+  S.view = Object.assign({ name: name }, params || {});
+  S.view.name = name;
+  if (name !== 'job') lsSet('pl_view', { name: name, group: S.view.group || null });
+  if (name === 'eps' && !initial) { S.sel = {}; S.page = 1; }
+  S.navOpen = false;
+  var shell = $('#shell');
+  if (shell) shell.classList.remove('nav-open');
+  var ns = $('.nav-scrim'); if (ns) ns.remove();
+  renderSide(); renderTop();
+  var el = $('#view');
+  el.innerHTML = '';
+  (VIEWS[name] || VIEWS.dash).mount(el);
+  window.scrollTo(0, 0);
+}
+
+/* =============================== POLLING =============================== */
+var timers = {};
+function startPolling() {
+  stopPolling();
+  timers.clock = setInterval(function () { tickClock(); var v = VIEWS[S.view.name]; if (v && v.tick) v.tick(); }, 1000);
+  timers.ep = setInterval(function () {
+    if (document.hidden) return;
+    if (['dash', 'eps', 'layar'].indexOf(S.view.name) < 0 && !$('.modal')) return;
+    refreshEndpoints();
+  }, IS_LIVE ? 5000 : 2000);
+  timers.job = setInterval(function () {
+    if (document.hidden) return;
+    var v = VIEWS[S.view.name];
+    if (v && v.poll) v.poll();
+  }, IS_LIVE ? 3500 : 1500);
+}
+function stopPolling() { Object.keys(timers).forEach(function (k) { clearInterval(timers[k]); }); timers = {}; }
+var epBusy = false;
+function refreshEndpoints() {
+  if (epBusy) return Promise.resolve();
+  epBusy = true;
+  return call('endpoints').then(function (r) {
+    epBusy = false;
+    S.offset = r.now - Date.now();
+    S.endpoints = r.endpoints;
+    var newGroup = false;
+    S.endpoints.forEach(function (e) { if (S.groups.indexOf(e.group) < 0) { S.groups.push(e.group); newGroup = true; } });
+    if (newGroup) {
+      S.groups.sort(function (a, b) { return a === NEW_GROUP ? -1 : b === NEW_GROUP ? 1 : natCmp(a, b); });
+      renderSide();
+    }
+    var pill = $('#online-pill');
+    if (pill) pill.textContent = S.endpoints.filter(function (e) { return e.online; }).length + '/' + S.endpoints.length + ' online';
+    $$('.nav .sub .cnt').forEach(function (el) {
+      var b = el.parentNode; var g = b.getAttribute('data-group');
+      el.textContent = epCount(g || null);
+    });
+    if (ptrDown) { deferred = true; return; }
+    applyEndpointUpdate();
+  }, function () { epBusy = false; });
+}
+function applyEndpointUpdate() {
+  var v = VIEWS[S.view.name];
+  if (v && v.update) v.update();
+  if (Wizard.open) Wizard.refreshEps();
+}
+/* jangan ganti isi tabel saat jari/mouse sedang menekan, supaya klik tidak hilang */
+var ptrDown = false, deferred = false;
+document.addEventListener('pointerdown', function () { ptrDown = true; }, true);
+document.addEventListener('pointerup', function () {
+  setTimeout(function () { ptrDown = false; if (deferred) { deferred = false; applyEndpointUpdate(); } }, 0);
+}, true);
+document.addEventListener('pointercancel', function () { ptrDown = false; }, true);
+
+/* =============================== LAYER (modal/drawer) =============================== */
+function openModal(html, opts) {
+  opts = opts || {};
+  var layer = $('#layer');
+  layer.innerHTML = '<div class="scrim" id="scrim"><div class="modal' + (opts.wide ? ' wide' : '') + '" role="dialog" aria-modal="true">' + html + '</div></div>';
+  $('#scrim').addEventListener('mousedown', function (e) { if (e.target.id === 'scrim' && !opts.sticky) closeLayer(); });
+  var f = $('.modal [autofocus]') || $('.modal input, .modal textarea, .modal select');
+  if (f) setTimeout(function () { f.focus(); }, 30);
+  return $('.modal');
+}
+function openDrawer(html) {
+  $('#layer').innerHTML = '<div class="scrim" id="scrim" style="justify-content:flex-end;padding:0"></div><aside class="drawer" role="dialog" aria-modal="true">' + html + '</aside>';
+  $('#scrim').addEventListener('mousedown', closeLayer);
+}
+function closeLayer() { $('#layer').innerHTML = ''; Wizard.open = false; }
+function confirmBox(title, body, okLabel, danger) {
+  return new Promise(function (resolve) {
+    openModal('<div class="mh"><h3>' + esc(title) + '</h3><button class="x" data-act="close">' + icon('x') + '</button></div>' +
+      '<div class="mb">' + body + '</div>' +
+      '<div class="mf"><span class="sp"></span><button class="btn ghost" data-act="close">Batal</button>' +
+      '<button class="btn' + (danger ? ' danger' : '') + '" id="cf-ok" autofocus>' + esc(okLabel || 'Lanjutkan') + '</button></div>');
+    $('#cf-ok').onclick = function () { closeLayer(); resolve(true); };
+    $$('[data-act=close]', $('#layer')).forEach(function (b) { b.addEventListener('click', function () { resolve(false); }); });
+  });
+}
+function promptBox(title, label, value, okLabel) {
+  return new Promise(function (resolve) {
+    openModal('<form id="pf"><div class="mh"><h3>' + esc(title) + '</h3><button type="button" class="x" data-act="close">' + icon('x') + '</button></div>' +
+      '<div class="mb"><label class="f">' + esc(label) + '<input class="inp" id="pf-v" value="' + esc(value || '') + '" maxlength="60" required></label></div>' +
+      '<div class="mf"><span class="sp"></span><button type="button" class="btn ghost" data-act="close">Batal</button><button class="btn" type="submit">' + esc(okLabel || 'Simpan') + '</button></div></form>');
+    $('#pf').addEventListener('submit', function (e) { e.preventDefault(); var v = $('#pf-v').value.trim(); closeLayer(); resolve(v || null); });
+    $$('[data-act=close]', $('#layer')).forEach(function (b) { b.addEventListener('click', function () { resolve(null); }); });
+  });
+}
+
+/* =============================== AKSI CEPAT =============================== */
+function runQuick(action, ids, label) {
+  var sc = SCRIPT[action];
+  if (sc.params) { Wizard.start({ action: action, targets: ids, jump: true }); return Promise.resolve(); }
+  var eps = S.endpoints.filter(function (e) { return ids.indexOf(e.id) >= 0; });
+  var online = eps.filter(function (e) { return e.online; }).length;
+  var note = action === 'wol'
+    ? '<div class="box info">' + (eps.length - online) + ' dari ' + eps.length + ' komputer sedang mati/offline dan akan dinyalakan. Sinyal dikirim oleh komputer lain yang online.</div>'
+    : (online < eps.length ? '<div class="box warn">' + (eps.length - online) + ' komputer sedang offline. Perintah akan dijalankan begitu komputer itu online (maks. ' + sc.win + ' menit).</div>' : '');
+  var danger = ['shutdown', 'restart', 'logoff'].indexOf(action) >= 0;
+  return confirmBox(sc.name, '<div>Jalankan <b>' + esc(sc.name) + '</b> sekarang di <b>' + eps.length + ' endpoint</b>' + (label ? ' (' + esc(label) + ')' : '') + '?</div>' + note +
+    '<div class="muted" style="font-size:13px">' + esc(sc.desc) + '</div>', 'Jalankan sekarang', danger).then(function (ok) {
+    if (!ok) return;
+    return act('createJob', { action: action, targets: ids, windowMin: sc.win }, sc.name + ' dikirim ke ' + ids.length + ' endpoint.').then(function (r) {
+      go('job', { id: r.id });
+    });
+  });
+}
+
+/* =============================== VIEWS =============================== */
+var VIEWS = {};
+
+/* ---------- DASHBOARD ---------- */
+VIEWS.dash = {
+  mount: function (el) {
+    var gopts = '<option value="">Semua endpoint</option>' + S.groups.map(function (g) {
+      return '<option' + (S.quickGroup === g ? ' selected' : '') + '>' + esc(g) + '</option>';
+    }).join('');
+    VIEWS.dash._sig = '';
+    el.innerHTML =
+      '<div class="page-h"><div><h1>Dashboard</h1><p>Ringkasan komputer lab dan aksi cepat untuk sesi ujian.</p></div>' +
+      '<div class="act"><button class="btn" data-act="wizard">' + icon('play', 'sm') + 'Jalankan Skrip</button></div></div>' +
+      '<div class="grid g-dash">' +
+      '<section class="card c12"><div class="hd"><h2>Aksi cepat ujian</h2><span class="sub">Satu klik untuk semua komputer, tanpa mondar-mandir.</span></div><div class="bd">' +
+      '<div class="quick-hd"><label class="muted" for="qg">Target</label><select class="inp" id="qg">' + gopts + '</select><span class="muted" id="qg-info"></span></div>' +
+      '<div class="quick">' +
+      '<button class="qbtn" data-act="quick" data-a="run_exam">' + icon('play') + '<b>Buka Exam Browser</b><span>#Run ExamBrowser</span></button>' +
+      '<button class="qbtn" data-act="quick" data-a="close_exam">' + icon('stop') + '<b>Tutup Exam Browser</b><span>#Close ExamBrowser</span></button>' +
+      '<button class="qbtn" data-act="quick" data-a="wol">' + icon('zap') + '<b>Nyalakan komputer</b><span>#Power ON · Wake On Lan</span></button>' +
+      '<button class="qbtn red" data-act="quick" data-a="shutdown">' + icon('power') + '<b>Matikan komputer</b><span>#Shutdown</span></button>' +
+      '</div></div></section>' +
+      '<section class="card c5"><div class="hd"><h2>Ringkasan</h2></div><div class="bd"><div class="stats" id="d-stats"></div></div></section>' +
+      '<section class="card c7"><div class="hd"><h2>Sesi ujian</h2><span class="act"><button class="btn ghost sm" data-act="go" data-v="layar">' + icon('tv', 'sm') + 'Atur layar</button></span></div><div class="bd" id="d-sesi"></div></section>' +
+      '<section class="card c4"><div class="hd"><h2>Kesiapan endpoint</h2></div><div class="bd" id="d-g1"></div></section>' +
+      '<section class="card c4"><div class="hd"><h2>Exam Browser</h2></div><div class="bd" id="d-g2"></div></section>' +
+      '<section class="card c4"><div class="hd"><h2>Otomasi terakhir</h2><span class="act"><button class="link-btn" data-act="go" data-v="jobs">Lihat semua</button></span></div><div class="bd" id="d-recent"><div class="muted">Memuat…</div></div></section>' +
+      '</div>';
+    $('#qg').addEventListener('change', function () { S.quickGroup = this.value; lsSet('pl_quick_group', this.value); VIEWS.dash.update(); });
+    this.update();
+    this.poll();
+  },
+  update: function () {
+    var g = S.quickGroup;
+    var eps = S.endpoints;
+    var on = eps.filter(function (e) { return e.online; });
+    var ex = on.filter(function (e) { return e.exam; });
+    var stats = $('#d-stats');
+    if (!stats) return;
+    stats.innerHTML =
+      '<div class="stat">' + icon('network') + '<div><b>' + eps.length + '</b><span>Endpoint</span></div></div>' +
+      '<div class="stat">' + icon('monitor', 'okc') + '<div><b>' + on.length + '</b><span>Online</span></div></div>' +
+      '<div class="stat">' + icon('play', 'infoc') + '<div><b>' + ex.length + '</b><span>Exam Browser aktif</span></div></div>' +
+      '<div class="stat">' + icon('power', 'badc') + '<div><b>' + (eps.length - on.length) + '</b><span>Offline / mati</span></div></div>';
+    $('#d-g1').innerHTML = gauge(on.length, eps.length, 'var(--ok)', 'var(--bad)', 'online',
+      [['var(--ok)', 'Online', on.length], ['var(--bad)', 'Offline / mati', eps.length - on.length]]);
+    $('#d-g2').innerHTML = gauge(ex.length, on.length, 'var(--info)', 'var(--idle)', 'berjalan',
+      [['var(--info)', 'Sedang berjalan', ex.length], ['var(--idle)', 'Belum dibuka', on.length - ex.length]]);
+    var tg = eps.filter(function (e) { return !g || e.group === g; });
+    var info = $('#qg-info');
+    if (info) info.textContent = tg.length + ' komputer · ' + tg.filter(function (e) { return e.online; }).length + ' online · ' + tg.filter(function (e) { return e.exam; }).length + ' Exam Browser aktif';
+  },
+  tick: function () {
+    var el = $('#d-sesi');
+    if (!el || !S.layar) return;
+    var L = S.layar, t = now();
+    var lbl, big;
+    if (!L.start) { lbl = 'Belum ada jadwal'; big = '--:--'; }
+    else if (t < L.start) { lbl = 'Dimulai dalam'; big = hms(L.start - t); }
+    else if (L.end && t < L.end) { lbl = 'Sedang berlangsung · berakhir dalam'; big = hms(L.end - t); }
+    else if (L.end && t >= L.end) { lbl = 'Sesi telah berakhir'; big = fTime(L.end); }
+    else { lbl = 'Sedang berlangsung sejak'; big = fTime(L.start); }
+    var sig = [lbl, L.start, L.end, L.token, L.sesi, L.label, S.settings.tz, L.start > t].join('|');
+    var bigEl = $('#d-big');
+    if (bigEl && VIEWS.dash._sig === sig) { bigEl.textContent = big; return; }
+    VIEWS.dash._sig = sig;
+    el.innerHTML = '<div class="session"><div class="muted">' + esc(L.sesi || '-') + ' · ' + esc(L.label || '') + '</div>' +
+      '<div><div class="muted" style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700">' + esc(lbl) + '</div><div class="big" id="d-big">' + esc(big) + '</div></div>' +
+      '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px"><span>Mulai <b>' + (L.start ? esc(fDT(L.start)) + ' ' + tzInfo().label : '-') + '</b></span><span>Token <b class="mono">' + esc(L.token || '-') + '</b></span></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost sm" href="' + esc(layarUrl()) + '" target="_blank" rel="noopener">' + icon('ext', 'sm') + 'Buka Layar Ujian</a>' +
+      (L.start && L.start > t ? '<button class="btn ghost sm" data-act="sched-exam">' + icon('clock', 'sm') + 'Jadwalkan #Run ExamBrowser pukul ' + esc(fTime(L.start)) + '</button>' : '') + '</div></div>';
+  },
+  poll: function () {
+    if (VIEWS.dash._busy) return;
+    VIEWS.dash._busy = true;
+    call('jobs').then(function (r) {
+      VIEWS.dash._busy = false;
+      S.jobs = r.jobs;
+      var el = $('#d-recent');
+      if (!el) return;
+      var list = r.jobs.slice(0, 5);
+      el.innerHTML = list.length ? '<div class="recent">' + list.map(function (j) {
+        var c = effCounts(j), stt = jobState(j);
+        return '<button data-act="open-job" data-id="' + esc(j.id) + '"><span><b>' + esc(j.script) + '</b> <span class="muted">· ' + j.total + ' endpoint</span></span>' +
+          '<span class="chip ' + stt + '">' + stt + '</span>' + barHtml(c, j.total) +
+          '<span class="muted" style="font-size:12px">' + esc(fDT(j.created)) + '</span><span class="muted" style="font-size:12px">' + (c.Berhasil || 0) + '/' + j.total + ' berhasil</span></button>';
+      }).join('') + '</div>' : '<div class="muted">Belum ada otomasi. Coba tombol aksi cepat di atas.</div>';
+    }, function () { VIEWS.dash._busy = false; });
+  }
+};
+function hms(ms) {
+  var s = Math.max(0, Math.floor(ms / 1000));
+  return pad(Math.floor(s / 3600)) + ':' + pad(Math.floor((s % 3600) / 60)) + ':' + pad(s % 60);
+}
+function gauge(val, total, cOn, cOff, cap, legend) {
+  var r = 80, cx = 100, cy = 96, len = Math.PI * r;
+  var frac = total ? val / total : 0;
+  var arc = 'M ' + (cx - r) + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + (cx + r) + ' ' + cy;
+  return '<div class="gauge-wrap"><div class="gauge"><svg viewBox="0 0 200 112" role="img" aria-label="' + val + ' dari ' + total + ' ' + cap + '">' +
+    '<path d="' + arc + '" fill="none" stroke="' + (total ? cOff : 'var(--idle-soft)') + '" stroke-width="20"/>' +
+    (val ? '<path d="' + arc + '" fill="none" stroke="' + cOn + '" stroke-width="20" stroke-dasharray="' + (frac * len).toFixed(1) + ' ' + len.toFixed(1) + '"/>' : '') +
+    '<text x="100" y="84" text-anchor="middle" class="num">' + val + '</text>' +
+    '<text x="100" y="104" text-anchor="middle" class="cap">dari ' + total + ' ' + esc(cap) + '</text></svg></div>' +
+    '<div class="legend">' + legend.map(function (l) { return '<span><i style="background:' + l[0] + '"></i>' + esc(l[1]) + ': <b>' + l[2] + '</b></span>'; }).join('') + '</div></div>';
+}
+function layarUrl() { return IS_LIVE ? 'layar.html?api=' + encodeURIComponent(API) : 'layar.html?demo=1'; }
+function absUrl(rel) { try { return new URL(rel, location.href).href; } catch (e) { return rel; } }
+
+/* ---------- ENDPOINT ---------- */
+VIEWS.eps = {
+  mount: function (el) {
+    var g = S.view.group;
+    var oses = {};
+    S.endpoints.forEach(function (e) { if (e.os) oses[e.os] = 1; });
+    var f = S.filt;
+    el.innerHTML =
+      '<div class="page-h"><div><h1>' + (g ? 'Endpoint terkelola di grup ' + esc(g) : 'Semua endpoint terkelola') + '</h1>' +
+      '<p>Centang komputer, lalu pilih tindakan. Status diperbarui otomatis setiap beberapa detik.</p></div></div>' +
+      '<section class="card"><div class="bd" style="display:flex;flex-direction:column;gap:12px">' +
+      '<div class="toolbar">' +
+      (g ? '<button class="btn" data-act="group-settings">Pengaturan Grup</button>' : '') +
+      '<div class="drop"><button class="btn" data-act="org-menu" id="org-btn">Atur Endpoint ' + icon('chevD', 'sm') + '</button></div>' +
+      '<button class="btn" data-act="sel-run" data-a="run_exam" data-need="1">' + icon('play', 'sm') + 'Buka Exam Browser</button>' +
+      '<button class="btn" data-act="sel-run" data-a="close_exam" data-need="1">' + icon('stop', 'sm') + 'Tutup Exam Browser</button>' +
+      '<button class="btn" data-act="sel-run" data-a="restart" data-need="1">Reboot</button>' +
+      '<button class="btn" data-act="wizard-sel">Jalankan Skrip</button>' +
+      '<button class="btn" data-act="wizard-sel">' + icon('plus', 'sm') + 'Otomasi Baru</button>' +
+      '<span class="sel-note" id="sel-note"></span>' +
+      '</div>' +
+      '<div class="filters">' +
+      '<div class="search">' + icon('search', 'sm') + '<input class="inp" id="f-q" placeholder="Cari nama, user, IP, MAC…" value="' + esc(f.q) + '"></div>' +
+      '<select class="inp" id="f-st" aria-label="Status"><option value="">Status: Semua</option><option value="on"' + (f.st === 'on' ? ' selected' : '') + '>Online</option><option value="off"' + (f.st === 'off' ? ' selected' : '') + '>Offline</option></select>' +
+      '<select class="inp" id="f-ex" aria-label="Exam Browser"><option value="">Exam Browser: Semua</option><option value="run"' + (f.ex === 'run' ? ' selected' : '') + '>Berjalan</option><option value="no"' + (f.ex === 'no' ? ' selected' : '') + '>Tidak berjalan</option></select>' +
+      '<select class="inp" id="f-os" aria-label="OS"><option value="">OS: Semua</option>' + Object.keys(oses).sort().map(function (o) { return '<option' + (f.os === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>' +
+      '<span class="count" id="ep-count"></span></div></div>' +
+      '<div class="tbl-wrap"><table class="tbl"><thead><tr>' +
+      '<th class="chk"><input type="checkbox" id="sel-all" aria-label="Pilih semua"></th>' +
+      th('name', 'Nama') + th('comment', 'Keterangan') + th('user', 'User') + th('online', 'Status') + th('exam', 'Exam Browser') +
+      th('ip', 'Alamat IP') + th('mac', 'MAC') + (g ? '' : th('group', 'Grup')) + th('os', 'OS') + th('seen', 'Terakhir online') +
+      '</tr></thead><tbody id="ep-body"></tbody></table></div>' +
+      '<div class="tbl-foot" id="ep-foot"></div></section>';
+    var self = this;
+    $('#f-q').addEventListener('input', function () { S.filt.q = this.value; S.page = 1; self.update(); });
+    [['#f-st', 'st'], ['#f-ex', 'ex'], ['#f-os', 'os']].forEach(function (p) {
+      $(p[0]).addEventListener('change', function () { S.filt[p[1]] = this.value; S.page = 1; self.update(); });
+    });
+    $('#sel-all').addEventListener('change', function () {
+      var on = this.checked;
+      self.visible().forEach(function (e) { if (on) S.sel[e.id] = 1; else delete S.sel[e.id]; });
+      self.update();
+    });
+    this.update();
+  },
+  list: function () {
+    var g = S.view.group, f = S.filt, q = f.q.trim().toLowerCase();
+    var k = S.sort.key, d = S.sort.dir;
+    return S.endpoints.filter(function (e) {
+      if (g && e.group !== g) return false;
+      if (f.st === 'on' && !e.online) return false;
+      if (f.st === 'off' && e.online) return false;
+      if (f.ex === 'run' && !e.exam) return false;
+      if (f.ex === 'no' && e.exam) return false;
+      if (f.os && e.os !== f.os) return false;
+      if (q && [e.name, e.user, e.ip, e.mac, e.comment, e.group].join(' ').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort(function (a, b) {
+      var x = a[k], y = b[k];
+      if (typeof x === 'boolean' || typeof x === 'number') return ((x > y) - (x < y)) * d || natCmp(a.name, b.name);
+      return natCmp(x || '', y || '') * d || natCmp(a.name, b.name);
+    });
+  },
+  visible: function () {
+    var all = this.list();
+    var ps = Number(S.pageSize) || 200;
+    return all.slice((S.page - 1) * ps, S.page * ps);
+  },
+  update: function () {
+    var body = $('#ep-body');
+    if (!body) return;
+    var g = S.view.group;
+    var all = this.list();
+    var ps = Number(S.pageSize) || 200;
+    var pages = Math.max(1, Math.ceil(all.length / ps));
+    if (S.page > pages) S.page = pages;
+    var vis = all.slice((S.page - 1) * ps, S.page * ps);
+    var ids = {};
+    S.endpoints.forEach(function (e) { ids[e.id] = 1; });
+    Object.keys(S.sel).forEach(function (id) { if (!ids[id]) delete S.sel[id]; });
+    body.innerHTML = vis.length ? vis.map(function (e) {
+      var sel = !!S.sel[e.id];
+      return '<tr class="click' + (sel ? ' sel' : '') + '" data-act="row" data-id="' + esc(e.id) + '">' +
+        '<td class="chk"><input type="checkbox" data-act="pick" data-id="' + esc(e.id) + '"' + (sel ? ' checked' : '') + ' aria-label="Pilih ' + esc(e.name) + '"></td>' +
+        '<td class="nm"><button data-act="ep-detail" data-id="' + esc(e.id) + '">' + esc(e.name) + '</button></td>' +
+        '<td class="muted cm">' + esc(e.comment || 'None') + '</td>' +
+        '<td class="user">' + (e.user ? esc(e.user) : '<span class="muted">' + (e.online ? 'Tidak ada yang login' : '-') + '</span>') + '</td>' +
+        '<td><span class="st ' + (e.online ? 'on' : 'off') + '">' + (e.online ? 'Terhubung' : 'Terputus') + '</span></td>' +
+        '<td>' + (e.exam ? '<span class="chip run">Berjalan</span>' : '<span class="chip no">' + (e.online ? 'Tidak' : '-') + '</span>') + '</td>' +
+        '<td class="mono nowrap">' + esc(e.ip || '-') + '</td>' +
+        '<td class="mono nowrap">' + esc(e.mac || '-') + '</td>' +
+        (g ? '' : '<td class="nowrap">' + esc(e.group) + '</td>') +
+        '<td class="nowrap">' + esc(e.os || '-') + '</td>' +
+        '<td class="nowrap muted">' + (e.online ? 'Sekarang' : esc(ago(e.seen))) + '</td></tr>';
+    }).join('') : '<tr><td colspan="11"><div class="empty">' + icon('monitor') + '<div><b>Belum ada endpoint di sini.</b></div>' +
+      '<div>' + (S.endpoints.length ? 'Ubah filter atau pencarian.' : 'Pasang agen di komputer lab, nanti komputer muncul otomatis.') + '</div>' +
+      (S.endpoints.length ? '' : '<div style="margin-top:12px"><button class="btn" data-act="go" data-v="agent">Pasang agen</button></div>') + '</div></td></tr>';
+    var on = all.filter(function (e) { return e.online; }).length;
+    $('#ep-count').innerHTML = '<span class="st on"></span>' + on + ' online · ' + all.length + ' endpoint';
+    var start = all.length ? (S.page - 1) * ps + 1 : 0;
+    $('#ep-foot').innerHTML = '<span>' + start + '–' + Math.min(all.length, S.page * ps) + ' dari ' + all.length + '</span>' +
+      '<select class="inp" id="ps" aria-label="Baris per halaman">' + [50, 100, 200].map(function (n) { return '<option' + (n === ps ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>' +
+      '<span class="pg"><button class="btn ghost sm" data-act="page" data-d="-1"' + (S.page <= 1 ? ' disabled' : '') + '>‹</button><button class="btn ghost sm" data-act="page" data-d="1"' + (S.page >= pages ? ' disabled' : '') + '>›</button></span>';
+    $('#ps').addEventListener('change', function () { S.pageSize = Number(this.value); lsSet('pl_pagesize', S.pageSize); S.page = 1; VIEWS.eps.update(); });
+    var nSel = Object.keys(S.sel).length;
+    var allSel = vis.length > 0 && vis.every(function (e) { return S.sel[e.id]; });
+    var sa = $('#sel-all');
+    sa.checked = allSel; sa.indeterminate = !allSel && vis.some(function (e) { return S.sel[e.id]; });
+    $('#sel-note').innerHTML = nSel ? icon('check', 'sm') + nSel + ' dipilih <button data-act="sel-clear">Batal pilih</button>' : '<span class="muted" style="font-weight:400">Centang endpoint untuk bertindak</span>';
+    $$('[data-need]').forEach(function (b) { b.disabled = !nSel; });
+    $('#org-btn').disabled = !nSel;
+  },
+  poll: null
+};
+function th(key, label) {
+  var on = S.sort.key === key;
+  return '<th class="sort" data-act="sort" data-k="' + key + '">' + esc(label) + (on ? (S.sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>';
+}
+function epDetail(id) {
+  var e = S.endpoints.filter(function (x) { return x.id === id; })[0];
+  if (!e) return;
+  openDrawer('<div class="modal" style="box-shadow:none;width:100%;max-height:none;height:100%;border-radius:0"><div class="mh"><h3>' + esc(e.name) + '</h3>' +
+    '<span class="st ' + (e.online ? 'on' : 'off') + '">' + (e.online ? 'Terhubung' : 'Terputus') + '</span>' +
+    '<button class="x" data-act="close">' + icon('x') + '</button></div><div class="mb">' +
+    '<dl class="kv"><dt>Grup</dt><dd>' + esc(e.group) + '</dd><dt>User</dt><dd>' + esc(e.user || '-') + '</dd>' +
+    '<dt>Exam Browser</dt><dd>' + (e.exam ? '<span class="chip run">Berjalan</span>' : 'Tidak berjalan') + '</dd>' +
+    '<dt>Alamat IP</dt><dd class="mono">' + esc(e.ip || '-') + '</dd><dt>MAC</dt><dd class="mono">' + esc(e.mac || '-') + '</dd>' +
+    '<dt>OS</dt><dd>' + esc(e.os || '-') + '</dd><dt>Versi agen</dt><dd>' + esc(e.ver || '-') + '</dd>' +
+    '<dt>Terakhir online</dt><dd>' + (e.online ? 'Sekarang' : esc(ago(e.seen))) + '</dd><dt>Terdaftar</dt><dd>' + esc(fDT(e.reg)) + '</dd></dl>' +
+    '<label class="f">Keterangan<input class="inp" id="ep-cm" value="' + esc(e.comment) + '" maxlength="120" placeholder="Misal: keyboard rusak"></label>' +
+    '<div><button class="btn ghost sm" data-act="save-comment" data-id="' + esc(e.id) + '">Simpan keterangan</button></div>' +
+    '<div class="h-sec">Tindakan untuk komputer ini</div><div class="btn-grid">' +
+    ['run_exam', 'close_exam', 'wol', 'restart', 'shutdown', 'lock', 'message', 'logoff'].map(function (a) {
+      return '<button class="btn ghost" data-act="one-run" data-a="' + a + '" data-id="' + esc(e.id) + '">' + icon(SCRIPT[a].icon, 'sm') + esc(SCRIPT[a].name) + '</button>';
+    }).join('') + '</div></div></div>');
+}
+
+/* ---------- RIWAYAT ---------- */
+VIEWS.jobs = {
+  mount: function (el) {
+    el.innerHTML = '<div class="page-h"><div><h1>Riwayat otomasi</h1><p>Semua skrip yang pernah dijalankan dari panel, terbaru di atas.</p></div>' +
+      '<div class="act"><button class="btn ghost" data-act="clear-history">' + icon('trash', 'sm') + 'Hapus riwayat</button><button class="btn" data-act="wizard">' + icon('plus', 'sm') + 'Jalankan Skrip</button></div></div>' +
+      '<section class="card"><div class="tbl-wrap" style="border-top:0"><table class="tbl"><thead><tr><th>Skrip</th><th>Target</th><th>Jadwal</th><th>Progres</th><th>Status</th><th>Dibuat</th></tr></thead>' +
+      '<tbody id="jobs-body"><tr><td colspan="6"><div class="loading"><span class="spin"></span></div></td></tr></tbody></table></div></section>';
+    this.poll();
+  },
+  poll: function () {
+    if (VIEWS.jobs._busy) return;
+    VIEWS.jobs._busy = true;
+    call('jobs').then(function (r) {
+      VIEWS.jobs._busy = false;
+      S.jobs = r.jobs;
+      var body = $('#jobs-body');
+      if (!body) return;
+      body.innerHTML = r.jobs.length ? r.jobs.map(function (j) {
+        var c = effCounts(j), stt = jobState(j);
+        return '<tr class="click" data-act="open-job" data-id="' + esc(j.id) + '"><td class="nm">' + esc(j.script) +
+          (j.params && j.params.text ? '<div class="muted" style="font-weight:400;font-size:12.5px;max-width:30ch;overflow:hidden;text-overflow:ellipsis">“' + esc(j.params.text) + '”</div>' : '') + '</td>' +
+          '<td class="nowrap">' + j.total + ' endpoint</td><td class="nowrap">' + esc(fDT(j.at)) + '</td>' +
+          '<td style="min-width:180px">' + barHtml(c, j.total) + '<div class="muted" style="font-size:12px;margin-top:4px">' + (c.Berhasil || 0) + ' berhasil' + (c.Gagal ? ' · ' + c.Gagal + ' gagal' : '') + ((c.Menunggu || 0) + (c.Diterima || 0) ? ' · ' + ((c.Menunggu || 0) + (c.Diterima || 0)) + ' menunggu' : '') + '</div></td>' +
+          '<td><span class="chip ' + stt + '">' + stt + '</span></td><td class="nowrap muted">' + esc(fDT(j.created)) + '</td></tr>';
+      }).join('') : '<tr><td colspan="6"><div class="empty">' + icon('history') + '<div><b>Belum ada riwayat.</b></div><div>Jalankan skrip pertama dari Dashboard atau menu Endpoint.</div></div></td></tr>';
+    }, function () { VIEWS.jobs._busy = false; });
+  }
+};
+
+/* ---------- DETAIL OTOMASI ---------- */
+VIEWS.job = {
+  mount: function (el) {
+    S.job = null;
+    el.innerHTML = '<div class="loading"><span class="spin"></span> Memuat detail…</div>';
+    this.poll(true);
+  },
+  poll: function (first) {
+    var id = S.view.id;
+    // setelah selesai, tetap segarkan pelan-pelan (kolom Koneksi, mis. setelah Wake on LAN)
+    if (!first && S.job && jobState(S.job.job) === 'Selesai' && !VIEWS.job._again && (VIEWS.job._n = (VIEWS.job._n || 0) + 1) % 4) return;
+    if (VIEWS.job._busy) return;
+    VIEWS.job._busy = true;
+    VIEWS.job._again = false;
+    call('job', { id: id }).then(function (r) {
+      VIEWS.job._busy = false;
+      if (S.view.name !== 'job' || S.view.id !== id) return;
+      var firstLoad = !S.job;
+      S.job = r;
+      if (firstLoad) renderTop();
+      VIEWS.job.render();
+    }, function (e) {
+      VIEWS.job._busy = false;
+      if (first) $('#view').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+    });
+  },
+  render: function () {
+    var r = S.job, j = r.job;
+    var rows = r.rows.map(function (x) { return Object.assign({}, x, { status: effStatus(x, j) }); });
+    var c = {};
+    rows.forEach(function (x) { c[x.status] = (c[x.status] || 0) + 1; });
+    var stt = jobState(j);
+    var pend = (c.Menunggu || 0) + (c.Diterima || 0);
+    var failed = rows.filter(function (x) { return x.status === 'Gagal' || x.status === 'Kedaluwarsa'; }).map(function (x) { return x.ep; });
+    var sc = SCRIPT[j.action] || {};
+    var params = j.params && (j.params.text || j.params.url) ? '<dt>Parameter</dt><dd>' + esc(j.params.text || j.params.url) + '</dd>' : '';
+    $('#view').innerHTML =
+      '<div class="page-h"><div><h1>' + esc(j.script) + (sc.sub ? ' <span class="muted" style="font-weight:500;font-size:15px">' + esc(sc.sub) + '</span>' : '') + '</h1>' +
+      '<p>' + esc(sc.desc || '') + '</p></div><div class="act">' +
+      (pend && stt !== 'Dibatalkan' ? '<button class="btn ghost" data-act="cancel-job">' + icon('x', 'sm') + 'Batalkan yang belum jalan</button>' : '') +
+      (failed.length ? '<button class="btn" data-act="retry-job">' + icon('rotate', 'sm') + 'Ulangi ' + failed.length + ' yang gagal</button>' : '') +
+      '</div></div>' +
+      '<section class="card"><div class="bd" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:20px">' +
+      '<dl class="kv"><dt>ID</dt><dd class="mono">' + esc(j.id) + '</dd><dt>Status</dt><dd><span class="chip ' + stt + '">' + stt + '</span></dd>' +
+      '<dt>Dijadwalkan</dt><dd>' + esc(fDT(j.at)) + ' ' + tzInfo().label + (j.at > now() ? ' <span class="muted">(' + esc(dur(j.at - now())) + 'lagi)</span>' : '') + '</dd>' +
+      '<dt>Batas waktu</dt><dd>' + esc(fDT(j.dl)) + ' ' + tzInfo().label + '</dd>' + params + '<dt>Dibuat</dt><dd>' + esc(fDT(j.created)) + '</dd></dl>' +
+      '<div style="display:flex;flex-direction:column;gap:12px;min-width:0"><div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:30px;font-weight:800">' + (c.Berhasil || 0) + '<span class="muted" style="font-size:18px;font-weight:600">/' + j.total + '</span></span><span class="muted">endpoint berhasil</span></div>' +
+      barHtml(c, j.total) +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' + ST_ORDER.filter(function (k) { return c[k]; }).map(function (k) { return '<span class="chip ' + k + '">' + k + ' ' + c[k] + '</span>'; }).join('') + '</div>' +
+      (pend && j.at <= now() ? '<div class="muted" style="font-size:12.5px;display:flex;gap:8px;align-items:center"><span class="spin"></span>Menunggu laporan dari endpoint… endpoint yang mati akan menjalankan perintah begitu online.</div>' : '') +
+      '</div></div></section>' +
+      '<section class="card"><div class="tbl-wrap" style="border-top:0"><table class="tbl"><thead><tr><th>Endpoint</th><th>Tipe</th><th>Grup</th><th>Koneksi</th><th>Status</th><th>Keterangan</th><th>Diperbarui</th></tr></thead><tbody>' +
+      rows.sort(function (a, b) { return natCmp(a.ep, b.ep); }).map(function (x) {
+        return '<tr><td class="nm">' + esc(x.ep) + '</td><td class="muted">Endpoint</td><td class="nowrap">' + esc(x.group) + '</td>' +
+          '<td><span class="st ' + (x.online ? 'on' : 'off') + '">' + (x.online ? 'Terhubung' : 'Terputus') + '</span></td>' +
+          '<td><span class="chip ' + x.status + '">' + x.status + '</span></td><td class="msg">' + esc(x.msg) + '</td><td class="nowrap muted">' + esc(fTime(x.t)) + '</td></tr>';
+      }).join('') + '</tbody></table></div></section>';
+    VIEWS.job._failed = failed;
+  },
+  tick: null
+};
+
+/* ---------- PUSTAKA SKRIP ---------- */
+VIEWS.scripts = {
+  mount: function (el) {
+    var s = S.settings;
+    el.innerHTML = '<div class="page-h"><div><h1>Pustaka Skrip</h1><p>Skrip yang bisa dijalankan ke endpoint. Atur dulu lokasi Exam Browser yang dipakai sekolah.</p></div></div>' +
+      '<div class="split"><section class="card"><div class="hd"><h2>Skrip tersedia</h2><span class="sub">' + SCRIPTS.length + ' skrip</span></div><div class="bd" style="padding:6px 0 0">' +
+      SCRIPTS.map(function (x) {
+        return '<div class="scard">' + icon(x.icon) + '<div style="min-width:0"><div class="t">' + esc(x.name) + (x.sub ? ' <span class="muted" style="font-weight:500">· ' + esc(x.sub) + '</span>' : '') + '</div><div class="d">' + esc(x.desc) + '</div></div>' +
+          '<button class="btn ghost sm" data-act="wizard-script" data-a="' + x.id + '">Jalankan…</button></div>';
+      }).join('') + '</div></section>' +
+      '<section class="card"><div class="hd"><h2>Konfigurasi Exam Browser</h2></div><form class="bd" id="exam-form" style="display:flex;flex-direction:column;gap:14px">' +
+      '<label class="f">Aplikasi<select class="inp" id="ex-preset">' + Object.keys(PRESETS).map(function (k) { return '<option value="' + k + '"' + (s.examPreset === k ? ' selected' : '') + '>' + esc(PRESETS[k].label) + '</option>'; }).join('') + '</select></label>' +
+      '<label class="f">Lokasi file .exe<input class="inp mono" id="ex-path" value="' + esc(s.examPath) + '" placeholder="C:\\Program Files\\...\\ExamBrowser.exe">' +
+      '<span class="hint">Cara mencari: klik kanan shortcut Exam Browser di desktop → Properties → salin isi kolom <b>Target</b> (tanpa tanda kutip).</span></label>' +
+      '<label class="f">Argumen tambahan <span class="hint">opsional, misalnya alamat ujian atau file konfigurasi .seb</span><input class="inp mono" id="ex-args" value="' + esc(s.examArgs) + '"></label>' +
+      '<label class="f">Nama proses <span class="hint">untuk deteksi & #Close ExamBrowser. Pisahkan dengan koma, boleh pakai *</span><input class="inp mono" id="ex-proc" value="' + esc(s.examProc) + '"></label>' +
+      '<div class="box info" style="font-size:13px">Lokasi file harus sama di semua komputer lab. Cek nama proses lewat Task Manager → tab Details.</div>' +
+      '<div><button class="btn" type="submit">Simpan konfigurasi</button></div></form></section></div>';
+    $('#ex-preset').addEventListener('change', function () {
+      var p = PRESETS[this.value];
+      if (this.value !== 'custom') { $('#ex-path').value = p.path; $('#ex-args').value = p.args; $('#ex-proc').value = p.proc; }
+    });
+    $('#exam-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      act('saveSettings', { examPreset: $('#ex-preset').value, examPath: $('#ex-path').value.trim(), examArgs: $('#ex-args').value.trim(), examProc: $('#ex-proc').value.trim() },
+        'Konfigurasi Exam Browser disimpan. Agen memakai pengaturan baru dalam beberapa detik.').then(function (r) { S.settings = r.settings; });
+    });
+  }
+};
+
+/* ---------- LAYAR UJIAN ---------- */
+VIEWS.layar = {
+  mount: function (el) {
+    var L = S.layar, base = L.start || (Math.ceil((now() + 30 * 60000) / 900000) * 900000);
+    el.innerHTML = '<div class="page-h"><div><h1>Layar Ujian</h1><p>Tampilan hitung mundur untuk TV atau proyektor di lab. Buka di browser TV, lalu tekan F11 untuk layar penuh.</p></div>' +
+      '<div class="act"><a class="btn" href="' + esc(layarUrl()) + '" target="_blank" rel="noopener">' + icon('ext', 'sm') + 'Buka Layar Ujian</a></div></div>' +
+      '<div class="split"><section class="card"><div class="hd"><h2>Isi layar</h2></div><form class="bd form-grid" id="layar-form">' +
+      '<label class="f">Label atas<input class="inp" id="ly-label" value="' + esc(L.label) + '" maxlength="60"></label>' +
+      '<label class="f">Nama sekolah<input class="inp" id="ly-school" value="' + esc(L.school) + '" maxlength="60"></label>' +
+      '<label class="f full">Pesan<input class="inp" id="ly-sub" value="' + esc(L.sub) + '" maxlength="80"></label>' +
+      '<label class="f">Sesi<input class="inp" id="ly-sesi" value="' + esc(L.sesi) + '" maxlength="20"></label>' +
+      '<label class="f">Token<span style="display:flex;gap:6px"><input class="inp mono" id="ly-token" value="' + esc(L.token) + '" maxlength="20" placeholder="kosongkan = tampil -" style="text-transform:uppercase"><button type="button" class="btn ghost" data-act="rand-token">Acak</button></span></label>' +
+      '<label class="f">Tanggal mulai<input class="inp" type="date" id="ly-date" value="' + zDateStr(base) + '"></label>' +
+      '<label class="f">Jam mulai (' + tzInfo().label + ')<input class="inp" type="time" id="ly-time" value="' + zTimeStr(base) + '"></label>' +
+      '<label class="f">Jam selesai (' + tzInfo().label + ') <span class="hint">opsional</span><input class="inp" type="time" id="ly-end" value="' + (L.end ? zTimeStr(L.end) : '') + '"></label>' +
+      '<div class="f full" style="display:flex;gap:8px;flex-wrap:wrap;flex-direction:row"><button class="btn" type="submit">Simpan & tampilkan</button>' +
+      '<button class="btn ghost" type="button" data-act="sched-exam">' + icon('clock', 'sm') + 'Jadwalkan #Run ExamBrowser saat mulai</button></div>' +
+      '</form></section>' +
+      '<section class="card"><div class="hd"><h2>Pratinjau</h2><span class="sub">diperbarui tiap detik</span></div><div class="bd"><div class="preview" id="ly-prev"></div></div></section></div>';
+    $('#layar-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var d = VIEWS.layar.read();
+      if (d.end && d.end <= d.start) { toast('Jam selesai harus setelah jam mulai.', true); return; }
+      act('saveLayar', d, 'Layar ujian diperbarui. TV akan berganti dalam beberapa detik.').then(function (r) { S.layar = r.layar; });
+    });
+    $$('#layar-form input').forEach(function (i) { i.addEventListener('input', function () { VIEWS.layar.tick(); }); });
+    this.tick();
+  },
+  read: function () {
+    var start = zEpoch($('#ly-date').value, $('#ly-time').value);
+    var endT = $('#ly-end').value;
+    var end = endT ? zEpoch($('#ly-date').value, endT) : 0;
+    return { label: $('#ly-label').value.trim(), school: $('#ly-school').value.trim(), sub: $('#ly-sub').value.trim(), sesi: $('#ly-sesi').value.trim(),
+      token: $('#ly-token').value.trim().toUpperCase(), start: start, end: end };
+  },
+  tick: function () {
+    var el = $('#ly-prev');
+    if (!el) return;
+    var d = this.read(), t = now();
+    var target = t < d.start ? d.start : (d.end && t < d.end ? d.end : 0);
+    var lbl = t < d.start ? 'DIMULAI DALAM' : (d.end && t < d.end ? 'BERAKHIR DALAM' : 'UJIAN BERLANGSUNG');
+    var s = target ? Math.max(0, Math.floor((target - t) / 1000)) : 0;
+    el.innerHTML = '<div class="lb">' + esc(d.label) + '</div><div class="sc">' + esc(d.school) + '</div><div class="sb">' + esc(d.sub) + '</div>' +
+      '<div class="pills"><span>● ' + esc(d.sesi) + '</span><span>TOKEN: ' + esc(d.token || '-') + '</span></div>' +
+      '<div class="lb" style="letter-spacing:.2em">' + lbl + '</div>' +
+      '<div class="digits"><div><b>' + pad(Math.floor(s / 3600)) + '</b><small>JAM</small></div><div><b>' + pad(Math.floor((s % 3600) / 60)) + '</b><small>MENIT</small></div><div><b>' + pad(s % 60) + '</b><small>DETIK</small></div></div>';
+  }
+};
+
+/* ---------- PASANG AGEN ---------- */
+VIEWS.agent = {
+  mount: function (el) {
+    var gopts = S.groups.map(function (g) { return '<option' + (g === S.settings.defaultGroup ? ' selected' : '') + '>' + esc(g) + '</option>'; }).join('');
+    el.innerHTML = '<div class="page-h"><div><h1>Pasang Agen</h1><p>Agen adalah program kecil di tiap komputer lab yang menerima perintah dari panel ini. Cukup dipasang sekali per komputer.</p></div></div>' +
+      '<section class="card"><div class="bd" style="display:flex;flex-direction:column;gap:16px">' +
+      '<label class="f" style="max-width:360px">Masukkan komputer ke grup<select class="inp" id="ag-group">' + gopts + '</select><span class="hint">Komputer yang dipasang akan langsung muncul di grup ini.</span></label>' +
+      '<div class="h-sec">Cara A · Satu perintah PowerShell (disarankan)</div>' +
+      '<ol class="howto"><li>Di komputer lab, klik kanan tombol <b>Start</b> → pilih <b>Terminal (Admin)</b> atau <b>Windows PowerShell (Admin)</b> → <b>Yes</b>.</li>' +
+      '<li>Salin perintah di bawah, tempel di jendela PowerShell (klik kanan = tempel), lalu tekan <span class="kbd">Enter</span>.</li>' +
+      '<li>Tunggu tulisan hijau <b>BERHASIL</b>. Komputer akan muncul di menu Endpoint dalam ±10 detik.</li></ol>' +
+      '<div class="code-row"><div class="codebox wrap" id="ag-cmd"></div><button class="btn" data-act="copy" data-src="#ag-cmd">' + icon('copy', 'sm') + 'Salin</button></div>' +
+      '<div class="h-sec">Cara B · File .bat lewat flashdisk</div>' +
+      '<p style="margin:0" class="muted">Unduh file, simpan di flashdisk, lalu di tiap komputer klik dua kali file tersebut dan pilih <b>Yes</b> saat diminta izin Administrator.</p>' +
+      '<div>' + (IS_LIVE ? '<a class="btn ghost" id="ag-bat" target="_blank" rel="noopener">' + icon('download', 'sm') + 'Unduh pasang-agen.bat</a>' : '<button class="btn ghost" disabled>' + icon('download', 'sm') + 'Unduh pasang-agen.bat (tersedia setelah dipasang)</button>') + '</div>' +
+      '</div></section>' +
+      '<div class="split"><section class="card"><div class="hd"><h2>Agar #Power ON (Wake on LAN) berfungsi</h2></div><div class="bd"><ol class="howto">' +
+      '<li>Di BIOS/UEFI tiap komputer, aktifkan <b>Wake on LAN</b> (kadang bernama <i>Power On by PCI-E</i> atau <i>Resume by LAN</i>).</li>' +
+      '<li>Pemasang agen sudah otomatis mematikan <b>Fast Startup</b> Windows dan mengaktifkan <b>Wake on Magic Packet</b> di kartu jaringan.</li>' +
+      '<li>Sinyal dikirim oleh komputer lain yang sedang menyala. Pasang juga agen di <b>PC proktor</b> agar selalu ada pengirim.</li>' +
+      '<li>Komputer harus dalam satu jaringan (satu switch/VLAN) dan kabel LAN tetap tercolok saat mati.</li></ol></div></section>' +
+      '<section class="card"><div class="hd"><h2>Kunci agen</h2></div><div class="bd" style="display:flex;flex-direction:column;gap:12px">' +
+      '<p class="muted" style="margin:0">Kunci ini ada di dalam perintah pemasangan. Jika kunci diganti, semua agen yang sudah terpasang harus dipasang ulang.</p>' +
+      '<div class="code-row"><div class="codebox" id="ag-key">' + esc(S.key.slice(0, 6)) + '••••••••••••••••' + '</div><button class="btn ghost" data-act="regen-key">' + icon('key', 'sm') + 'Ganti kunci</button></div>' +
+      '<div class="h-sec">Mencopot agen</div><p class="muted" style="margin:0">Jalankan perintah ini di PowerShell (Admin) komputer yang ingin dicopot agennya.</p>' +
+      '<div class="code-row"><div class="codebox wrap" id="ag-un"></div><button class="btn ghost" data-act="copy" data-src="#ag-un">' + icon('copy', 'sm') + 'Salin</button></div>' +
+      '</div></section></div>' +
+      '<section class="card"><div class="hd"><h2>Kode agen</h2><span class="sub">untuk diperiksa, tidak perlu disalin</span><span class="act"><button class="btn ghost sm" data-act="show-agent">Tampilkan kode</button></span></div><div class="bd" id="ag-code" hidden></div></section>';
+    $('#ag-group').addEventListener('change', function () { VIEWS.agent.fill(); });
+    this.fill();
+  },
+  fill: function () {
+    var g = $('#ag-group') ? $('#ag-group').value : '';
+    var base = IS_LIVE ? API + '?f=install&k=' + encodeURIComponent(S.key) : S.installUrl.replace(/&g=.*$/, '');
+    var u = base + (g ? '&g=' + encodeURIComponent(g).replace(/'/g, '%27') : '');
+    $('#ag-cmd').textContent = "[Net.ServicePointManager]::SecurityProtocol=3072; irm '" + u + "' -UseBasicParsing | iex";
+    $('#ag-un').textContent = "[Net.ServicePointManager]::SecurityProtocol=3072; irm '" + base.replace('f=install', 'f=uninstall') + "' -UseBasicParsing | iex";
+    var bat = $('#ag-bat');
+    if (bat) bat.href = u.replace('f=install', 'f=bat');
+  }
+};
+
+/* ---------- PENGATURAN ---------- */
+VIEWS.settings = {
+  mount: function (el) {
+    var s = S.settings;
+    el.innerHTML = '<div class="page-h"><div><h1>Pengaturan</h1></div></div>' +
+      '<div class="split"><section class="card"><div class="hd"><h2>Umum</h2></div><form class="bd form-grid" id="set-form">' +
+      '<label class="f full">Nama sekolah<input class="inp" id="st-school" value="' + esc(s.school) + '" maxlength="80"></label>' +
+      '<label class="f">Zona waktu<select class="inp" id="st-tz">' + Object.keys(TZ).map(function (k) { return '<option value="' + k + '"' + (s.tz === k ? ' selected' : '') + '>' + TZ[k].label + ' (' + k + ')</option>'; }).join('') + '</select></label>' +
+      '<label class="f">Interval lapor agen (detik)<input class="inp" type="number" id="st-int" min="5" max="120" value="' + esc(s.interval) + '"><span class="hint">Lebih kecil = lebih cepat, tapi kuota Apps Script lebih boros. 10 detik sudah cukup.</span></label>' +
+      '<label class="f full">Grup bawaan untuk komputer baru<select class="inp" id="st-grp">' + S.groups.map(function (g) { return '<option' + (g === s.defaultGroup ? ' selected' : '') + '>' + esc(g) + '</option>'; }).join('') + '</select></label>' +
+      '<div class="full"><button class="btn" type="submit">Simpan pengaturan</button></div></form></section>' +
+      (IS_LIVE ? '<section class="card"><div class="hd"><h2>Ganti kata sandi admin</h2></div><form class="bd" id="pw-form" style="display:flex;flex-direction:column;gap:12px">' +
+        '<label class="f">Kata sandi lama<input class="inp" type="password" id="pw-old" autocomplete="current-password" required></label>' +
+        '<label class="f">Kata sandi baru<input class="inp" type="password" id="pw-new" autocomplete="new-password" minlength="6" required></label>' +
+        '<label class="f">Ulangi kata sandi baru<input class="inp" type="password" id="pw-new2" autocomplete="new-password" required></label>' +
+        '<div><button class="btn" type="submit">Ganti kata sandi</button></div></form></section>' : '<section class="card"><div class="hd"><h2>Kata sandi admin</h2></div><div class="bd muted">Di versi terpasang, panel dilindungi kata sandi admin yang dibuat saat pertama kali dibuka. Mode demo tidak memakai kata sandi.</div></section>') +
+      '</div>' +
+      '<section class="card"><div class="hd"><h2>Koneksi & informasi</h2><span class="act"><button class="btn ghost sm" data-act="connect">' + (IS_LIVE ? 'Ganti URL backend' : 'Hubungkan ke backend') + '</button></span></div><div class="bd"><dl class="kv">' +
+      '<dt>Panel (frontend)</dt><dd class="mono">' + esc(location.origin + location.pathname) + '</dd>' +
+      '<dt>Backend</dt><dd class="mono">' + esc(IS_LIVE ? API : 'Mode demo, belum terhubung') + '</dd>' +
+      '<dt>Layar ujian</dt><dd class="mono">' + esc(absUrl(layarUrl())) + '</dd>' +
+      '<dt>Versi</dt><dd>ProktorLab v' + esc(S.version) + '</dd></dl></div></section>';
+    $('#set-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      act('saveSettings', { school: $('#st-school').value.trim(), tz: $('#st-tz').value, interval: Number($('#st-int').value), defaultGroup: $('#st-grp').value }, 'Pengaturan disimpan.')
+        .then(function (r) { S.settings = r.settings; renderSide(); renderTop(); });
+    });
+    var pf = $('#pw-form');
+    if (pf) pf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if ($('#pw-new').value !== $('#pw-new2').value) { toast('Kata sandi baru tidak sama.', true); return; }
+      act('changePassword', { old: $('#pw-old').value, password: $('#pw-new').value }, 'Kata sandi diganti.').then(function () { pf.reset(); });
+    });
+  }
+};
+
+/* ---------- PANDUAN & KODE ---------- */
+var FILES = [
+  { name: 'Code.gs', src: 'apps-script/Code.gs', kind: 'Skrip', how: 'Sudah ada saat Apps Script dibuka. Hapus semua isinya, lalu tempel.' },
+  { name: 'Agen.gs', src: 'apps-script/Agen.gs', kind: 'Skrip', how: 'Klik + di samping "File" → Skrip → beri nama Agen.' }
+];
+var FILE_CACHE = {};
+function loadFiles() {
+  FILES.forEach(function (f) {
+    if (FILE_CACHE[f.name]) return;
+    fetch(f.src).then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); }).then(function (t) {
+      FILE_CACHE[f.name] = t;
+      var m = $('[data-meta="' + f.name + '"]');
+      if (m) m.textContent = t.split('\n').length + ' baris · ' + Math.round(t.length / 1024) + ' KB';
+      var b = $('[data-file="' + f.name + '"]');
+      if (b) b.disabled = false;
+    }, function () {
+      var m = $('[data-meta="' + f.name + '"]');
+      if (m) m.textContent = 'Gagal memuat. Muat ulang halaman.';
+    });
+  });
+}
+VIEWS.guide = {
+  mount: function (el) {
+    el.innerHTML = '<div class="page-h"><div><h1>Panduan pemasangan & kode</h1><p>Tampilan panel ini dibuka dari GitHub Pages. Datanya disimpan di Google Sheet lewat backend Google Apps Script milik sekolah. Ikuti langkah berikut sekali saja; setelah itu panel bisa dibuka dari HP atau laptop proktor.</p></div></div>' +
+      '<section class="card"><div class="hd"><h2>1 · Salin 2 file backend</h2><span class="sub">Tombol Salin langsung menyalin seluruh isi file</span></div><div class="bd" style="padding:0">' +
+      FILES.map(function (f) {
+        return '<div class="scard">' + icon('code') + '<div style="min-width:0;flex:1"><div class="t mono" style="font-size:14px">' + esc(f.name) + ' <span class="muted" style="font-family:var(--f-ui);font-weight:500;font-size:12.5px">· ' + f.kind + ' · <span data-meta="' + f.name + '">memuat…</span></span></div>' +
+          '<div class="d">' + esc(f.how) + '</div><div data-view="' + f.name + '" hidden style="margin-top:10px"></div></div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn ghost sm" data-act="view-file" data-f="' + f.name + '">Lihat</button><button class="btn sm" data-act="copy-file" data-file="' + f.name + '" data-f="' + f.name + '" disabled>' + icon('copy', 'sm') + 'Salin</button></div></div>';
+      }).join('') + '</div></section>' +
+      '<section class="card"><div class="hd"><h2>2 · Langkah pemasangan</h2></div><div class="bd"><ol class="howto">' +
+      '<li>Buka <b>sheets.new</b> di browser (login akun Google sekolah), beri nama spreadsheet <b>ProktorLab</b>.</li>' +
+      '<li>Klik menu <b>Ekstensi → Apps Script</b>. Ganti nama proyek menjadi <b>ProktorLab</b>.</li>' +
+      '<li>Tempel kedua file di atas sesuai petunjuknya. Nama file harus persis: <span class="kbd">Code</span> dan <span class="kbd">Agen</span>. Tekan <span class="kbd">Ctrl</span>+<span class="kbd">S</span>.</li>' +
+      '<li>Di toolbar atas, pilih fungsi <b>setup</b> lalu klik <b>Jalankan</b>. Saat diminta, klik <b>Tinjau izin</b> → pilih akun → <b>Lanjutan</b> → <b>Buka ProktorLab</b> → <b>Izinkan</b>.</li>' +
+      '<li>Klik <b>Terapkan → Deployment baru</b> → ikon roda gigi → <b>Aplikasi web</b>. Isi: <i>Jalankan sebagai</i> = <b>Saya</b>, <i>Yang memiliki akses</i> = <b>Siapa saja</b>. Klik <b>Terapkan</b>, lalu salin <b>URL aplikasi web</b> (berakhiran <span class="mono">/exec</span>). Jika pilihan <b>Siapa saja</b> tidak muncul (akun belajar.id/akun sekolah sering dibatasi admin), pasang dengan akun Gmail pribadi, karena komputer lab harus bisa menghubungi panel tanpa login.</li>' +
+      '<li>Buka panel di GitHub Pages, tempel URL <span class="mono">/exec</span> tadi di layar <b>Hubungkan ke backend</b>, lalu buat kata sandi admin. Agar semua perangkat langsung terhubung tanpa menempel URL, isi juga <span class="mono">apiUrl</span> di file <b>config.js</b> pada repo GitHub.</li>' +
+      '<li>Buka menu <b>Pasang Agen</b> di panel, jalankan perintahnya di setiap komputer lab (sekali saja).</li>' +
+      '<li>Buka menu <b>Pustaka Skrip</b>, isi lokasi file Exam Browser yang dipakai sekolah.</li>' +
+      '<li>Selesai. Dari Dashboard, klik <b>Buka Exam Browser</b> dan semua komputer membukanya bersamaan.</li></ol>' +
+      '<div class="box warn" style="margin-top:14px;font-size:13px"><b>Saat memperbarui kode:</b> tempel kode baru, simpan, lalu <b>Terapkan → Kelola deployment → ikon pensil → Versi: Versi baru → Terapkan</b>. URL tetap sama, jadi agen tidak perlu dipasang ulang.</div>' +
+      '</div></section>' +
+      '<section class="card"><div class="hd"><h2>Cara kerjanya</h2></div><div class="bd"><ol class="howto">' +
+      '<li><b>Agen</b> di tiap komputer berjalan sebagai layanan Windows (SYSTEM) dan melapor ke panel setiap 10 detik.</li>' +
+      '<li>Saat proktor menjalankan skrip, panel menaruh perintah di antrean komputer tujuan. Agen mengambilnya pada laporan berikutnya.</li>' +
+      '<li>Untuk jadwal "pada waktu tertentu", agen menerima perintah lebih awal lalu menjalankannya tepat pada jamnya, sehingga semua komputer serentak.</li>' +
+      '<li>Exam Browser dibuka di akun Windows yang sedang login. Hasil tiap komputer (berhasil/gagal) tampil di menu Riwayat.</li></ol></div></section>';
+    loadFiles();
+    FILES.forEach(function (f) {
+      if (FILE_CACHE[f.name]) {
+        var t = FILE_CACHE[f.name];
+        $('[data-meta="' + f.name + '"]').textContent = t.split('\n').length + ' baris · ' + Math.round(t.length / 1024) + ' KB';
+        $('[data-file="' + f.name + '"]').disabled = false;
+      }
+    });
+  }
+};
+
+/* =============================== WIZARD JALANKAN SKRIP =============================== */
+var Wizard = {
+  open: false,
+  start: function (opts) {
+    opts = opts || {};
+    var sc = SCRIPT[opts.action || ''];
+    var tg = opts.targets || [];
+    this.d = {
+      step: 1, action: opts.action || '', params: {}, sel: {}, group: S.view.name === 'eps' ? (S.view.group || '') : '', q: '',
+      when: opts.at ? 'at' : 'now', date: zDateStr(opts.at || now() + 15 * 60000), time: zTimeStr(opts.at || now() + 15 * 60000),
+      win: sc ? sc.win : 60, unit: 'menit'
+    };
+    var self = this;
+    tg.forEach(function (id) { self.d.sel[id] = 1; });
+    this.open = true;
+    openModal('<div class="mh"><h3>Jalankan Skrip</h3><button class="x" data-act="close" aria-label="Tutup">' + icon('x') + '</button></div>' +
+      '<div class="steps" id="wz-steps"></div><div class="mb" id="wz-body"></div><div class="mf" id="wz-foot"></div>', { wide: true, sticky: true });
+    if (opts.action && opts.jump && !sc.params) this.d.step = tg.length ? 3 : 2;
+    this.render();
+  },
+  render: function () {
+    var d = this.d;
+    $('#wz-steps').innerHTML = [['Jalankan Skrip', 1], ['Pilih Endpoint', 2], ['Jadwal', 3]].map(function (s) {
+      return '<div class="s' + (d.step === s[1] ? ' on' : d.step > s[1] ? ' done' : '') + '"><b>' + s[1] + '</b><span>' + s[0] + '</span></div>';
+    }).join('');
+    var body = $('#wz-body');
+    if (d.step === 1) this.step1(body);
+    if (d.step === 2) this.step2(body);
+    if (d.step === 3) this.step3(body);
+    var n = Object.keys(d.sel).length;
+    $('#wz-foot').innerHTML = (d.step > 1 ? '<button class="btn ghost" data-act="wz-prev">Sebelumnya</button>' : '') +
+      '<span class="sp"></span><span class="muted" style="font-size:13px">' + (d.action ? esc(SCRIPT[d.action].name) : 'Belum memilih skrip') + ' · ' + n + ' endpoint</span>' +
+      '<button class="btn ghost" data-act="close">Batal</button>' +
+      (d.step < 3 ? '<button class="btn" data-act="wz-next">Selanjutnya</button>' : '<button class="btn" data-act="wz-finish" id="wz-finish">Selesai</button>');
+  },
+  step1: function (el) {
+    var d = this.d;
+    el.innerHTML = '<div><b>Skrip yang dijalankan</b><div class="muted" style="font-size:13px">Pilih skrip dari Pustaka Skrip.</div></div>' +
+      '<div class="search" style="max-width:none">' + icon('search', 'sm') + '<input class="inp" id="wz-q" placeholder="Cari…" value="' + esc(d.q) + '"></div>' +
+      '<div class="slist" id="wz-list"></div><div id="wz-params"></div>';
+    var self = this;
+    var draw = function () {
+      var q = $('#wz-q').value.toLowerCase();
+      d.q = $('#wz-q').value;
+      $('#wz-list').innerHTML = SCRIPTS.filter(function (s) { return !q || (s.name + ' ' + s.desc + ' ' + (s.sub || '')).toLowerCase().indexOf(q) >= 0; }).map(function (s) {
+        return '<label class="sitem' + (d.action === s.id ? ' on' : '') + '"><input type="radio" name="wz-s" value="' + s.id + '"' + (d.action === s.id ? ' checked' : '') + '>' +
+          '<div><div class="t">' + esc(s.name) + (s.sub ? '<small>' + esc(s.sub) + '</small>' : '') + '</div><div class="d">' + esc(s.desc) + '</div></div></label>';
+      }).join('') || '<div class="empty">Tidak ada skrip yang cocok.</div>';
+      $$('#wz-list input').forEach(function (r) {
+        r.addEventListener('change', function () {
+          d.action = this.value; d.win = SCRIPT[d.action].win; d.unit = 'menit';
+          $$('#wz-list .sitem').forEach(function (x) { x.classList.toggle('on', x.querySelector('input').checked); });
+          self.params(); self.renderFootOnly();
+        });
+      });
+    };
+    $('#wz-q').addEventListener('input', draw);
+    draw();
+    this.params();
+  },
+  params: function () {
+    var d = this.d, el = $('#wz-params');
+    if (!el) return;
+    var sc = SCRIPT[d.action];
+    if (!sc || !sc.params) { el.innerHTML = ''; return; }
+    el.innerHTML = sc.params.map(function (p) {
+      var v = esc(d.params[p.key] || '');
+      return '<label class="f">' + esc(p.label) + (p.type === 'textarea'
+        ? '<textarea class="inp" data-p="' + p.key + '" maxlength="500" placeholder="' + esc(p.ph) + '">' + v + '</textarea>'
+        : '<input class="inp" data-p="' + p.key + '" maxlength="500" placeholder="' + esc(p.ph) + '" value="' + v + '">') + '</label>';
+    }).join('');
+    $$('[data-p]', el).forEach(function (i) { i.addEventListener('input', function () { d.params[this.getAttribute('data-p')] = this.value; }); });
+  },
+  renderFootOnly: function () {
+    var d = this.d, n = Object.keys(d.sel).length;
+    var m = $('#wz-foot .muted');
+    if (m) m.textContent = (d.action ? SCRIPT[d.action].name : 'Belum memilih skrip') + ' · ' + n + ' endpoint';
+  },
+  step2: function (el) {
+    var d = this.d;
+    el.innerHTML = '<div><b>Pilih endpoint</b><div class="muted" style="font-size:13px">' + (d.action === 'wol' ? 'Pilih komputer yang ingin dinyalakan (biasanya yang berstatus mati).' : 'Endpoint yang offline akan menjalankan skrip begitu online, selama masih dalam batas waktu.') + '</div></div>' +
+      '<div class="filters"><select class="inp" id="wz-g" aria-label="Grup"><option value="">Semua grup</option>' + S.groups.map(function (g) { return '<option' + (d.group === g ? ' selected' : '') + '>' + esc(g) + '</option>'; }).join('') + '</select>' +
+      '<div class="search">' + icon('search', 'sm') + '<input class="inp" id="wz-eq" placeholder="Cari nama…"></div>' +
+      '<button class="btn ghost sm" data-act="wz-all">Pilih semua yang tampil</button><button class="btn ghost sm" data-act="wz-none">Kosongkan</button>' +
+      (d.action === 'wol' ? '<button class="btn ghost sm" data-act="wz-off">Pilih yang mati</button>' : '<button class="btn ghost sm" data-act="wz-on">Pilih yang online</button>') +
+      '<span class="count" id="wz-count"></span></div><div class="eplist" id="wz-eps"></div>';
+    $('#wz-g').addEventListener('change', function () { d.group = this.value; Wizard.refreshEps(); });
+    $('#wz-eq').addEventListener('input', function () { Wizard.refreshEps(); });
+    this.refreshEps();
+  },
+  epFiltered: function () {
+    var d = this.d, q = ($('#wz-eq') ? $('#wz-eq').value : '').toLowerCase();
+    return S.endpoints.filter(function (e) { return (!d.group || e.group === d.group) && (!q || e.name.toLowerCase().indexOf(q) >= 0); })
+      .sort(function (a, b) { return natCmp(a.name, b.name); });
+  },
+  refreshEps: function () {
+    var el = $('#wz-eps');
+    if (!el || this.d.step !== 2) return;
+    var d = this.d;
+    var list = this.epFiltered();
+    el.innerHTML = list.map(function (e) {
+      var on = !!d.sel[e.id];
+      return '<label class="epi' + (on ? ' on' : '') + '"><input type="checkbox" data-id="' + esc(e.id) + '"' + (on ? ' checked' : '') + '><span class="n">' + esc(e.name) + '</span>' +
+        (e.exam ? '<span class="chip run" style="padding:0 6px;font-size:10.5px">EB</span>' : '') + '<span class="dot' + (e.online ? ' on' : '') + '" title="' + (e.online ? 'Online' : 'Offline') + '"></span></label>';
+    }).join('') || '<div class="muted">Tidak ada endpoint.</div>';
+    $$('input', el).forEach(function (c) {
+      c.addEventListener('change', function () {
+        var id = this.getAttribute('data-id');
+        if (this.checked) d.sel[id] = 1; else delete d.sel[id];
+        this.parentNode.classList.toggle('on', this.checked);
+        Wizard.counts();
+      });
+    });
+    this.counts();
+  },
+  counts: function () {
+    var d = this.d, ids = Object.keys(d.sel);
+    var on = S.endpoints.filter(function (e) { return d.sel[e.id] && e.online; }).length;
+    var c = $('#wz-count');
+    if (c) c.textContent = ids.length + ' dipilih · ' + on + ' online';
+    this.renderFootOnly();
+  },
+  step3: function (el) {
+    var d = this.d, sc = SCRIPT[d.action], tz = tzInfo().label;
+    el.innerHTML = '<div><b>Kapan otomasi ini dijalankan?</b></div><div class="sched">' +
+      '<label class="radio"><input type="radio" name="wz-when" value="now"' + (d.when === 'now' ? ' checked' : '') + '><div><b>Sekarang</b><div class="muted" style="font-size:13px">Dijalankan begitu tiap endpoint melapor (±' + S.settings.interval + ' detik).</div></div></label>' +
+      '<label class="radio"><input type="radio" name="wz-when" value="at"' + (d.when === 'at' ? ' checked' : '') + '><div><b>Pada waktu tertentu</b><div class="muted" style="font-size:13px">Semua endpoint menjalankan tepat pada jam yang sama.</div></div></label>' +
+      '<div class="row"><input class="inp" type="date" id="wz-date" value="' + d.date + '"><input class="inp" type="time" id="wz-time" value="' + d.time + '"><span class="muted">' + tz + '</span></div></div>' +
+      '<div class="h-sec">Jendela penjadwalan ulang</div>' +
+      '<div class="sched"><div class="row" style="padding-left:0">Batas waktu penyelesaian <input class="inp" type="number" min="1" max="999" id="wz-win" value="' + d.win + '" style="width:80px">' +
+      '<select class="inp" id="wz-unit"><option' + (d.unit === 'menit' ? ' selected' : '') + '>menit</option><option' + (d.unit === 'jam' ? ' selected' : '') + '>jam</option></select> setelah waktu mulai.</div>' +
+      '<div class="muted" style="font-size:13px">Endpoint yang mati atau offline tetap menjalankan skrip begitu online lagi, selama masih dalam batas waktu ini. Setelah itu statusnya menjadi Kedaluwarsa.</div></div>' +
+      '<div class="box info" id="wz-sum"></div>';
+    var self = this;
+    var upd = function () {
+      d.when = $('[name=wz-when]:checked').value; d.date = $('#wz-date').value; d.time = $('#wz-time').value;
+      d.win = Number($('#wz-win').value) || 1; d.unit = $('#wz-unit').value;
+      $('#wz-date').disabled = $('#wz-time').disabled = d.when !== 'at';
+      var n = Object.keys(d.sel).length;
+      var whenTxt = d.when === 'now' ? 'sekarang' : 'pada ' + fLong(zEpoch(d.date, d.time)) + ' pukul ' + d.time + ' ' + tz;
+      $('#wz-sum').innerHTML = '<b>' + esc(sc.name) + '</b> akan dijalankan di <b>' + n + ' endpoint</b> ' + esc(whenTxt) + '.' +
+        (d.params.text ? '<div style="margin-top:6px">Pesan: “' + esc(d.params.text) + '”</div>' : '') + (d.params.url ? '<div style="margin-top:6px">URL: ' + esc(d.params.url) + '</div>' : '');
+    };
+    $$('input, select', el).forEach(function (i) { i.addEventListener('input', upd); i.addEventListener('change', upd); });
+    upd();
+    self.renderFootOnly();
+  },
+  next: function () {
+    var d = this.d;
+    if (d.step === 1) {
+      if (!d.action) { toast('Pilih salah satu skrip dulu.', true); return; }
+      var sc = SCRIPT[d.action];
+      if (sc.params) {
+        for (var i = 0; i < sc.params.length; i++) {
+          var v = String(d.params[sc.params[i].key] || '').trim();
+          if (!v) { toast(sc.params[i].label + ' wajib diisi.', true); return; }
+          if (sc.params[i].key === 'url' && !/^https?:\/\//i.test(v)) { toast('URL harus diawali http:// atau https://', true); return; }
+        }
+      }
+    }
+    if (d.step === 2 && !Object.keys(d.sel).length) { toast('Pilih minimal satu endpoint.', true); return; }
+    d.step++;
+    this.render();
+  },
+  prev: function () { this.d.step--; this.render(); },
+  finish: function () {
+    var d = this.d;
+    var at = 0;
+    if (d.when === 'at') {
+      if (!d.date || !d.time) { toast('Isi tanggal dan jam.', true); return; }
+      at = zEpoch(d.date, d.time);
+      if (at < now() - 60000) { toast('Waktu yang dipilih sudah lewat.', true); return; }
+    }
+    var winMin = d.win * (d.unit === 'jam' ? 60 : 1);
+    var btn = $('#wz-finish');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span> Mengirim…';
+    var targets = Object.keys(d.sel);
+    act('createJob', { action: d.action, params: d.params, targets: targets, runAt: at, windowMin: winMin },
+      SCRIPT[d.action].name + (at ? ' dijadwalkan untuk ' : ' dikirim ke ') + targets.length + ' endpoint.').then(function (r) {
+      closeLayer();
+      go('job', { id: r.id });
+    }, function () { btn.disabled = false; btn.textContent = 'Selesai'; });
+  }
+};
+
+/* =============================== EVENT =============================== */
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-act]');
+  if (!el) {
+    var dm = $('.drop-menu'); if (dm && !e.target.closest('.drop')) dm.remove();
+    return;
+  }
+  var a = el.getAttribute('data-act');
+  var dmenu = $('.drop-menu'); if (dmenu && a !== 'org-menu' && !el.closest('.drop-menu')) dmenu.remove();
+  var id = el.getAttribute('data-id');
+  switch (a) {
+    case 'go': {
+      var p = {};
+      if (el.hasAttribute('data-group')) p.group = el.getAttribute('data-group');
+      go(el.getAttribute('data-v'), p);
+      break;
+    }
+    case 'toggle-ep':
+      if (S.view.name !== 'eps' || S.view.group) { S.epOpen = true; go('eps', {}); }
+      else { S.epOpen = !S.epOpen; renderSide(); }
+      break;
+    case 'collapse': S.collapsed = !S.collapsed; lsSet('pl_collapsed', S.collapsed); $('#shell').classList.toggle('collapsed', S.collapsed); break;
+    case 'burger': {
+      var sh = $('#shell'); sh.classList.add('nav-open');
+      var scr = document.createElement('div'); scr.className = 'nav-scrim';
+      scr.onclick = function () { sh.classList.remove('nav-open'); scr.remove(); };
+      sh.appendChild(scr);
+      break;
+    }
+    case 'logout': call('logout').then(showLogin, showLogin); break;
+    case 'connect': showConnect(); break;
+    case 'close': closeLayer(); break;
+    case 'wizard': Wizard.start({}); break;
+    case 'wizard-sel': Wizard.start({ targets: Object.keys(S.sel) }); break;
+    case 'wizard-script': Wizard.start({ action: el.getAttribute('data-a'), jump: true }); break;
+    case 'wz-next': Wizard.next(); break;
+    case 'wz-prev': Wizard.prev(); break;
+    case 'wz-finish': Wizard.finish(); break;
+    case 'wz-all': Wizard.epFiltered().forEach(function (x) { Wizard.d.sel[x.id] = 1; }); Wizard.refreshEps(); break;
+    case 'wz-none': Wizard.d.sel = {}; Wizard.refreshEps(); break;
+    case 'wz-on': Wizard.epFiltered().forEach(function (x) { if (x.online) Wizard.d.sel[x.id] = 1; else delete Wizard.d.sel[x.id]; }); Wizard.refreshEps(); break;
+    case 'wz-off': Wizard.epFiltered().forEach(function (x) { if (!x.online) Wizard.d.sel[x.id] = 1; else delete Wizard.d.sel[x.id]; }); Wizard.refreshEps(); break;
+    case 'quick': {
+      var g = S.quickGroup;
+      var act1 = el.getAttribute('data-a');
+      var list = S.endpoints.filter(function (x) { return !g || x.group === g; });
+      if (act1 === 'wol') list = list.filter(function (x) { return !x.online; });
+      if (!list.length) { toast(act1 === 'wol' ? 'Semua komputer di target sudah menyala.' : 'Tidak ada endpoint di target ini.', true); break; }
+      runQuick(act1, list.map(function (x) { return x.id; }), g || 'semua grup');
+      break;
+    }
+    case 'sched-exam': {
+      var L = VIEWS.layar.read && $('#ly-date') ? VIEWS.layar.read() : S.layar;
+      if (!L.start || L.start < now()) { toast('Atur jam mulai sesi yang belum lewat dulu.', true); break; }
+      var tg = S.endpoints.filter(function (x) { return !S.quickGroup || x.group === S.quickGroup; }).map(function (x) { return x.id; });
+      Wizard.start({ action: 'run_exam', targets: tg, at: L.start, jump: true });
+      break;
+    }
+    case 'row': {
+      if (e.target.closest('button, input')) break;
+      if (S.sel[id]) delete S.sel[id]; else S.sel[id] = 1;
+      VIEWS.eps.update();
+      break;
+    }
+    case 'pick': {
+      if (el.checked) S.sel[id] = 1; else delete S.sel[id];
+      VIEWS.eps.update();
+      break;
+    }
+    case 'sel-clear': S.sel = {}; VIEWS.eps.update(); break;
+    case 'sort': {
+      var k = el.getAttribute('data-k');
+      if (S.sort.key === k) S.sort.dir *= -1; else S.sort = { key: k, dir: 1 };
+      go('eps', { group: S.view.group }, true);
+      break;
+    }
+    case 'page': S.page += Number(el.getAttribute('data-d')); VIEWS.eps.update(); break;
+    case 'sel-run': {
+      var ids = Object.keys(S.sel);
+      if (ids.length) runQuick(el.getAttribute('data-a'), ids, '');
+      break;
+    }
+    case 'one-run': closeLayer(); runQuick(el.getAttribute('data-a'), [id], id); break;
+    case 'ep-detail': epDetail(id); break;
+    case 'save-comment':
+      act('setComment', { id: id, comment: $('#ep-cm').value.trim() }, 'Keterangan disimpan.').then(refreshEndpoints);
+      break;
+    case 'org-menu': {
+      var ex = $('.drop-menu');
+      if (ex) { ex.remove(); break; }
+      var n = Object.keys(S.sel).length;
+      var m = document.createElement('div');
+      m.className = 'drop-menu';
+      m.innerHTML = '<button data-act="org-move"' + (n ? '' : ' disabled') + '>' + icon('folder', 'sm') + 'Pindahkan ke grup…</button>' +
+        '<button data-act="org-comment"' + (n === 1 ? '' : ' disabled') + '>' + icon('edit', 'sm') + 'Ubah keterangan…</button>' +
+        '<button data-act="org-delete" class="red"' + (n ? '' : ' disabled') + '>' + icon('trash', 'sm') + 'Hapus dari panel…</button>';
+      el.parentNode.appendChild(m);
+      break;
+    }
+    case 'org-move': {
+      var ids2 = Object.keys(S.sel);
+      openModal('<form id="mv"><div class="mh"><h3>Pindahkan ' + ids2.length + ' endpoint</h3><button type="button" class="x" data-act="close">' + icon('x') + '</button></div>' +
+        '<div class="mb"><label class="f">Ke grup<select class="inp" id="mv-g">' + S.groups.map(function (g) { return '<option>' + esc(g) + '</option>'; }).join('') + '<option value="__new">+ Grup baru…</option></select></label>' +
+        '<label class="f" id="mv-new-w" hidden>Nama grup baru<input class="inp" id="mv-new" maxlength="60" placeholder="Misal: Lab TJKT 1"></label></div>' +
+        '<div class="mf"><span class="sp"></span><button type="button" class="btn ghost" data-act="close">Batal</button><button class="btn" type="submit">Pindahkan</button></div></form>');
+      $('#mv-g').addEventListener('change', function () { $('#mv-new-w').hidden = this.value !== '__new'; });
+      $('#mv').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var grp = $('#mv-g').value === '__new' ? $('#mv-new').value.trim() : $('#mv-g').value;
+        if (!grp) { toast('Isi nama grup.', true); return; }
+        closeLayer();
+        act('moveEndpoints', { ids: ids2, group: grp }, ids2.length + ' endpoint dipindahkan ke ' + grp + '.').then(function () {
+          if (S.groups.indexOf(grp) < 0) S.groups.push(grp);
+          S.sel = {};
+          return refreshEndpoints();
+        }).then(function () { renderSide(); VIEWS.eps.update(); });
+      });
+      break;
+    }
+    case 'org-comment': {
+      var one = Object.keys(S.sel)[0];
+      var ep0 = S.endpoints.filter(function (x) { return x.id === one; })[0];
+      promptBox('Keterangan ' + one, 'Keterangan', ep0 ? ep0.comment : '', 'Simpan').then(function (v) {
+        if (v == null) return;
+        act('setComment', { id: one, comment: v }, 'Keterangan disimpan.').then(refreshEndpoints);
+      });
+      break;
+    }
+    case 'org-delete': {
+      var ids3 = Object.keys(S.sel);
+      confirmBox('Hapus ' + ids3.length + ' endpoint?', '<div>Endpoint akan dihapus dari daftar panel. Jika agennya masih terpasang dan komputer menyala, komputer akan muncul lagi di grup bawaan.</div><div class="muted">Untuk menghapus permanen, copot agennya (menu Pasang Agen).</div>', 'Hapus', true)
+        .then(function (ok) {
+          if (!ok) return;
+          act('deleteEndpoints', { ids: ids3 }, ids3.length + ' endpoint dihapus.').then(function () { S.sel = {}; return refreshEndpoints(); }).then(function () { renderSide(); });
+        });
+      break;
+    }
+    case 'new-group':
+      promptBox('Grup baru', 'Nama grup', '', 'Buat grup').then(function (v) {
+        if (!v) return;
+        act('createGroup', { name: v }, 'Grup ' + v + ' dibuat. Pindahkan endpoint lewat menu Atur Endpoint.').then(function (r) { S.groups = r.groups; go('eps', { group: v }); });
+      });
+      break;
+    case 'group-settings': {
+      var gname = S.view.group;
+      if (gname === NEW_GROUP) { toast('Grup "' + NEW_GROUP + '" adalah grup bawaan dan tidak bisa diubah.', true); break; }
+      openModal('<div class="mh"><h3>Pengaturan grup</h3><button class="x" data-act="close">' + icon('x') + '</button></div>' +
+        '<div class="mb"><label class="f">Nama grup<input class="inp" id="gs-name" value="' + esc(gname) + '" maxlength="60"></label>' +
+        '<div class="muted" style="font-size:13px">Grup ini berisi ' + epCount(gname) + ' endpoint. Jika dihapus, endpoint pindah ke grup "' + NEW_GROUP + '".</div></div>' +
+        '<div class="mf"><button class="btn danger" id="gs-del">' + icon('trash', 'sm') + 'Hapus grup</button><span class="sp"></span><button class="btn ghost" data-act="close">Batal</button><button class="btn" id="gs-save">Simpan</button></div>');
+      $('#gs-save').onclick = function () {
+        var to = $('#gs-name').value.trim();
+        if (!to || to === gname) { closeLayer(); return; }
+        closeLayer();
+        act('renameGroup', { from: gname, to: to }, 'Nama grup diganti.').then(function (r) { S.groups = r.groups; return refreshEndpoints(); }).then(function () { go('eps', { group: to }); });
+      };
+      $('#gs-del').onclick = function () {
+        closeLayer();
+        act('deleteGroup', { name: gname }, 'Grup dihapus.').then(function (r) { S.groups = r.groups; return refreshEndpoints(); }).then(function () { go('eps', {}); });
+      };
+      break;
+    }
+    case 'open-job': go('job', { id: id }); break;
+    case 'cancel-job':
+      confirmBox('Batalkan otomasi?', '<div>Endpoint yang belum menjalankan skrip ini tidak akan menjalankannya.</div>', 'Batalkan otomasi', true).then(function (ok) {
+        if (!ok) return;
+        act('cancelJob', { id: S.view.id }, 'Otomasi dibatalkan.').then(function () { VIEWS.job._again = true; VIEWS.job.poll(); });
+      });
+      break;
+    case 'retry-job': {
+      var j = S.job.job;
+      act('createJob', { action: j.action, params: j.params, targets: VIEWS.job._failed, windowMin: (SCRIPT[j.action] || {}).win || 60 },
+        'Diulang untuk ' + VIEWS.job._failed.length + ' endpoint.').then(function (r) { go('job', { id: r.id }); });
+      break;
+    }
+    case 'clear-history':
+      confirmBox('Hapus semua riwayat?', '<div>Semua riwayat otomasi dan perintah yang belum dijalankan akan dihapus. Data endpoint tidak terhapus.</div>', 'Hapus riwayat', true).then(function (ok) {
+        if (!ok) return;
+        act('clearHistory', {}, 'Riwayat dihapus.').then(function () { VIEWS.jobs.poll(); });
+      });
+      break;
+    case 'rand-token': {
+      var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+      var tk = '';
+      for (var i = 0; i < 6; i++) tk += chars[Math.floor(Math.random() * chars.length)];
+      $('#ly-token').value = tk;
+      VIEWS.layar.tick();
+      break;
+    }
+    case 'copy': copyText($(el.getAttribute('data-src')).textContent); break;
+    case 'regen-key':
+      confirmBox('Ganti kunci agen?', '<div>Semua agen yang sudah terpasang <b>berhenti terhubung</b> dan harus dipasang ulang dengan perintah baru. Lakukan hanya jika kunci bocor.</div>', 'Ganti kunci', true).then(function (ok) {
+        if (!ok) return;
+        act('regenKey', {}, 'Kunci agen diganti. Pasang ulang agen di semua komputer.').then(function (r) { S.key = r.key; S.installUrl = r.installUrl; go('agent'); });
+      });
+      break;
+    case 'show-agent': {
+      var box = $('#ag-code');
+      if (!box.hidden) { box.hidden = true; el.textContent = 'Tampilkan kode'; break; }
+      box.hidden = false; el.textContent = 'Sembunyikan';
+      box.innerHTML = '<div class="loading"><span class="spin"></span></div>';
+      call('agentCode').then(function (r) { box.innerHTML = '<pre class="src">' + esc(r.code) + '</pre>'; });
+      break;
+    }
+    case 'view-file': {
+      var fn = el.getAttribute('data-f');
+      var w = $('[data-view="' + fn + '"]');
+      if (!w.hidden) { w.hidden = true; el.textContent = 'Lihat'; break; }
+      w.hidden = false; el.textContent = 'Tutup';
+      w.innerHTML = FILE_CACHE[fn] ? '<pre class="src">' + esc(FILE_CACHE[fn]) + '</pre>' : '<div class="muted">Masih memuat…</div>';
+      break;
+    }
+    case 'copy-file': {
+      var f2 = el.getAttribute('data-f');
+      if (FILE_CACHE[f2]) copyText(FILE_CACHE[f2], f2 + ' disalin (' + FILE_CACHE[f2].split('\n').length + ' baris). Tempel di Apps Script.');
+      break;
+    }
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    var dm = $('.drop-menu'); if (dm) { dm.remove(); return; }
+    if ($('#layer').innerHTML) closeLayer();
+  }
+});
+
+/* =============================== MULAI =============================== */
+if (QS.get('demo') === '1') startDemo();
+else if (API) startLive();
+else showConnect();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Layar Ujian</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@600&display=swap">
+<style>
+/* Layar TV: satu tampilan terang (lavender-putih) yang sengaja tidak ikut mode gelap. */
+:root {
+  --bg-1: #f8f9ff;
+  --bg-2: #e3e7f7;
+  --ink: #10142c;
+  --ink-2: #4a5069;
+  --ink-3: #8a90a8;
+  --blue: #1f50d6;
+  --blue-2: #3b82f6;
+  --card: #ffffff;
+  --track: #dfe3f0;
+  --shadow: 0 1.2vh 3vh rgba(31, 45, 120, .10), 0 .2vh .5vh rgba(31, 45, 120, .06);
+  --f: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: radial-gradient(120% 90% at 50% 0%, var(--bg-1) 0%, #eef0fb 55%, var(--bg-2) 100%);
+  color: var(--ink); font-family: var(--f); overflow: hidden; -webkit-font-smoothing: antialiased;
+}
+.stage {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(10px, 2.4vh, 30px); text-align: center;
+  padding: max(2vh, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(2vh, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.date {
+  display: inline-flex; align-items: center; gap: .7em; background: rgba(255, 255, 255, .85); border: 1px solid #dde1ef;
+  border-radius: 999px; padding: .45em 1.1em; font-size: clamp(11px, 1.35vw, 22px); color: var(--ink-2); font-weight: 600;
+}
+.date svg { width: 1.1em; height: 1.1em; stroke: currentColor; fill: none; stroke-width: 2; }
+.date .sep { width: 1px; height: 1em; background: #cfd4e4; }
+.date .time { font-family: var(--mono); color: var(--ink); }
+.label { color: var(--blue); font-weight: 800; letter-spacing: .32em; font-size: clamp(11px, 1.55vw, 26px); margin-right: -.32em; }
+.school { font-weight: 800; font-size: clamp(30px, 6.6vw, 128px); letter-spacing: -.03em; line-height: 1; margin: 0; max-width: 96vw; text-wrap: balance; }
+.sub { color: var(--ink-2); font-size: clamp(14px, 2.1vw, 36px); font-weight: 500; margin-top: -.2em; }
+.pills { display: flex; gap: clamp(10px, 1.6vw, 28px); flex-wrap: wrap; justify-content: center; margin-top: .4vh; }
+.pill {
+  background: var(--card); border-radius: 999px; box-shadow: var(--shadow); min-width: clamp(150px, 22vw, 420px);
+  padding: .55em 1.6em; font-weight: 800; font-size: clamp(15px, 2.15vw, 38px); letter-spacing: .08em;
+  display: inline-flex; align-items: center; justify-content: center; gap: .55em; border: 0; color: var(--ink); font-family: var(--f);
+}
+.pill .dot { width: .42em; height: .42em; border-radius: 50%; background: var(--ink); }
+.pill.live .dot { background: #16a34a; box-shadow: 0 0 0 0 rgba(22, 163, 74, .5); animation: pulse 1.6s infinite; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 .5em rgba(22, 163, 74, 0); } 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); } }
+.pill .tk-lbl { color: var(--ink-2); }
+.pill .tk { font-family: var(--mono); color: var(--blue); letter-spacing: .12em; }
+button.pill { cursor: pointer; }
+.pill svg { width: .8em; height: .8em; stroke: var(--ink-3); fill: none; stroke-width: 2.2; }
+.prog { width: min(64vw, 1200px); display: flex; flex-direction: column; gap: .9vh; margin-top: 1vh; }
+.prog .row { display: flex; justify-content: space-between; font-size: clamp(9px, 1vw, 17px); font-weight: 800; letter-spacing: .22em; color: var(--blue); }
+.prog .row span:last-child { color: var(--ink-3); letter-spacing: .05em; }
+.prog .track { height: clamp(5px, .9vh, 12px); background: var(--track); border-radius: 99px; overflow: hidden; }
+.prog .fill { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--blue), var(--blue-2)); transition: width .8s ease; }
+.clock { display: flex; align-items: center; gap: clamp(8px, 1.8vw, 34px); margin-top: .6vh; }
+.unit { background: var(--card); border-radius: clamp(14px, 1.8vw, 34px); box-shadow: var(--shadow); width: clamp(96px, 15.5vw, 300px); padding: clamp(10px, 2.2vh, 34px) 0 clamp(8px, 1.6vh, 24px); }
+.digits { display: flex; justify-content: center; font-weight: 800; font-size: clamp(44px, 8.6vw, 168px); line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.slot { position: relative; display: inline-block; width: .64em; height: 1.08em; overflow: hidden; }
+.slot span { position: absolute; left: 0; right: 0; top: 0; text-align: center; line-height: 1.08em; }
+.slot .in { animation: dropIn .45s cubic-bezier(.2, .8, .2, 1) both; }
+.slot .out { animation: dropOut .45s cubic-bezier(.2, .8, .2, 1) both; color: var(--ink-3); }
+@keyframes dropIn { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+@keyframes dropOut { from { transform: translateY(0); opacity: 1; } to { transform: translateY(100%); opacity: .2; } }
+.unit small { display: block; margin-top: clamp(4px, 1vh, 14px); font-size: clamp(9px, .95vw, 17px); letter-spacing: .3em; font-weight: 700; color: var(--ink-3); margin-right: -.3em; }
+.colon { display: flex; flex-direction: column; gap: clamp(8px, 1.6vh, 22px); }
+.colon i { width: clamp(6px, .6vw, 12px); height: clamp(6px, .6vw, 12px); border-radius: 50%; background: #c9cee0; display: block; }
+.note { font-size: clamp(12px, 1.4vw, 24px); color: var(--ink-2); font-weight: 600; min-height: 1.4em; }
+.fs { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); border: 1px solid #d5daea; background: rgba(255, 255, 255, .9);
+  border-radius: 8px; padding: 8px 12px; font: 600 13px var(--f); color: var(--ink-2); cursor: pointer; transition: opacity .4s; }
+.fs.hide { opacity: 0; pointer-events: none; }
+.toast { position: fixed; left: 50%; bottom: 4vh; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; }
+.offline { position: fixed; left: max(16px, env(safe-area-inset-left, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); font-size: 12px; color: #b45309; font-weight: 600; }
+@media (max-width: 640px) {
+  body { overflow: auto; }
+  .stage { height: auto; min-height: 100%; }
+  .colon { display: none; }
+  .prog { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .slot .in, .slot .out, .pill.live .dot { animation: none; } .slot .out { display: none; } }
+</style>
+</head>
+<body>
+<main class="stage">
+  <div class="date"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="d-date">-</span><span class="sep"></span><span class="time" id="d-time">--:--</span></div>
+  <div class="label" id="v-label">TES KEMAMPUAN AKADEMIK</div>
+  <h1 class="school" id="v-school">Memuat…</h1>
+  <div class="sub" id="v-sub"></div>
+  <div class="pills">
+    <div class="pill" id="p-sesi"><span class="dot"></span><span id="v-sesi">SESI</span></div>
+    <button class="pill" id="p-token" title="Salin token"><span class="tk-lbl">TOKEN:</span><span class="tk" id="v-token">-</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>
+  </div>
+  <div class="prog"><div class="row"><span id="v-state">DIMULAI DALAM</span><span id="v-pct">0%</span></div><div class="track"><div class="fill" id="v-fill"></div></div></div>
+  <div class="clock" aria-live="off">
+    <div class="unit"><div class="digits" id="u-h"></div><small>JAM</small></div>
+    <div class="colon"><i></i><i></i></div>
+    <div class="unit"><div class="digits" id="u-m"></div><small>MENIT</small></div>
+    <div class="colon"><i></i><i></i></div>
+    <div class="unit"><div class="digits" id="u-s"></div><small>DETIK</small></div>
+  </div>
+  <div class="note" id="v-note"></div>
+</main>
+<button class="fs" id="fs">Layar penuh</button>
+<div class="offline" id="offline" hidden>Koneksi ke server terputus, menampilkan data terakhir…</div>
+<script src="config.js"></script>
+<script>
+(function () {
+  'use strict';
+  var CFG = window.PROKTORLAB_CONFIG || {};
+  var QS = new URLSearchParams(location.search);
+  function lsApi() { try { return JSON.parse(localStorage.getItem('pl_api') || '""'); } catch (e) { return ''; } }
+  var API = QS.get('demo') === '1' ? '' : String(QS.get('api') || lsApi() || CFG.apiUrl || '').trim();
+  var TZ = { 'Asia/Jakarta': ['WIB', 7], 'Asia/Makassar': ['WITA', 8], 'Asia/Jayapura': ['WIT', 9] };
+  var HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  var BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  var L = null, tz = 'Asia/Makassar', offset = 0, lastSig = '';
+  function $(id) { return document.getElementById(id); }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function now() { return Date.now() + offset; }
+  function zp(ms) {
+    var d = new Date(ms + (TZ[tz] || TZ['Asia/Makassar'])[1] * 3600000);
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds(), dow: d.getUTCDay() };
+  }
+  function midnight(ms) { var p = zp(ms); return Date.UTC(p.y, p.m, p.d) - (TZ[tz] || TZ['Asia/Makassar'])[1] * 3600000; }
+
+  // ---------- digit bergulir ----------
+  var units = { h: $('u-h'), m: $('u-m'), s: $('u-s') };
+  var shown = { h: '', m: '', s: '' };
+  function setUnit(k, val) {
+    val = String(val);
+    if (shown[k] === val) return;
+    var el = units[k], prev = shown[k];
+    if (el.children.length !== val.length) {
+      el.innerHTML = '';
+      for (var i = 0; i < val.length; i++) { var sl = document.createElement('span'); sl.className = 'slot'; el.appendChild(sl); }
+      prev = '';
+    }
+    for (var j = 0; j < val.length; j++) {
+      var slot = el.children[j];
+      var o = prev.charAt(j), n = val.charAt(j);
+      if (o === n) continue;
+      slot.innerHTML = (o ? '<span class="out">' + o + '</span>' : '') + '<span class="' + (o ? 'in' : '') + '">' + n + '</span>';
+    }
+    shown[k] = val;
+  }
+
+  function apply(data) {
+    if (!data) return;
+    L = data.layar || data;
+    if (data.tz) tz = data.tz;
+    else if (L.tz) tz = L.tz;
+    var sig = [L.label, L.school, L.sub, L.sesi, L.token].join('|');
+    if (sig !== lastSig) {
+      lastSig = sig;
+      $('v-label').textContent = L.label || '';
+      $('v-school').textContent = L.school || '';
+      $('v-sub').textContent = L.sub || '';
+      $('v-sesi').textContent = L.sesi || '-';
+      $('v-token').textContent = L.token || '-';
+      document.title = 'Layar Ujian ' + (L.school || '');
+    }
+    tick();
+  }
+
+  function tick() {
+    var t = now(), p = zp(t), lbl = (TZ[tz] || TZ['Asia/Makassar'])[0];
+    $('d-date').textContent = HARI[p.dow] + ', ' + p.d + ' ' + BULAN[p.m] + ' ' + p.y;
+    $('d-time').textContent = pad(p.h) + ':' + pad(p.mi) + ' ' + lbl;
+    if (!L) return;
+    var state, pct, secs, note = '', live = false;
+    var start = Number(L.start) || 0, end = Number(L.end) || 0;
+    if (!start) {
+      state = 'WAKTU SEKARANG'; pct = 0; secs = p.h * 3600 + p.mi * 60 + p.s;
+      note = 'Jadwal sesi belum diatur.';
+    } else if (t < start) {
+      state = 'DIMULAI DALAM';
+      var from = Math.min(midnight(start), start - 60000);
+      pct = Math.max(0, Math.min(100, (t - from) / (start - from) * 100));
+      secs = Math.ceil((start - t) / 1000);
+      var sp = zp(start);
+      note = 'Mulai pukul ' + pad(sp.h) + ':' + pad(sp.mi) + ' ' + lbl;
+    } else if (end && t < end) {
+      state = 'BERAKHIR DALAM'; live = true;
+      pct = Math.max(0, Math.min(100, (t - start) / (end - start) * 100));
+      secs = Math.ceil((end - t) / 1000);
+      note = 'Ujian sedang berlangsung. Selamat mengerjakan!';
+    } else if (end) {
+      state = 'SESI TELAH BERAKHIR'; pct = 100; secs = 0;
+      note = 'Terima kasih. Tunggu arahan proktor sebelum meninggalkan ruangan.';
+    } else {
+      state = 'BERLANGSUNG SELAMA'; live = true; pct = 100;
+      secs = Math.floor((t - start) / 1000);
+      note = 'Ujian sedang berlangsung. Selamat mengerjakan!';
+    }
+    $('v-state').textContent = state;
+    $('v-pct').textContent = Math.floor(pct) + '%';
+    $('v-fill').style.width = pct.toFixed(2) + '%';
+    $('v-note').textContent = note;
+    $('p-sesi').classList.toggle('live', live);
+    var h = Math.floor(secs / 3600);
+    setUnit('h', pad(Math.min(h, 99)));
+    setUnit('m', pad(Math.floor((secs % 3600) / 60)));
+    setUnit('s', pad(secs % 60));
+  }
+
+  // ---------- data ----------
+  function load() {
+    if (API) {
+      fetch(API + (API.indexOf('?') < 0 ? '?' : '&') + 'action=layar', { redirect: 'follow' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j || !j.ok) throw new Error('x');
+          $('offline').hidden = true;
+          offset = j.data.now - Date.now();
+          apply(j.data);
+        })
+        .catch(function () { $('offline').hidden = false; });
+    } else {
+      var d = null;
+      try { d = JSON.parse(localStorage.getItem('pl_demo_layar') || 'null'); } catch (e) {}
+      if (!d) {
+        var q = 15 * 60000;
+        d = { label: 'TES KEMAMPUAN AKADEMIK', school: 'SMKN 1 Murung Pudak', sub: 'Harap Senang Ada Ujian 😊', sesi: 'SESI 1', token: '', start: Math.ceil((Date.now() + 12 * 60000) / q) * q, end: 0, tz: 'Asia/Makassar' };
+      }
+      apply(d);
+    }
+  }
+  load();
+  setInterval(load, API ? 15000 : 2000);
+  window.addEventListener('storage', function (e) { if (e.key === 'pl_demo_layar') load(); });
+  setInterval(tick, 250);
+
+  // ---------- kenyamanan TV ----------
+  $('p-token').addEventListener('click', function () {
+    var t = $('v-token').textContent;
+    if (!t || t === '-') return;
+    var ok = function () { var d = document.createElement('div'); d.className = 'toast'; d.textContent = 'Token disalin'; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 1600); };
+    try { navigator.clipboard.writeText(t).then(ok, function () {}); } catch (e) {}
+  });
+  var fsBtn = $('fs'), hideT;
+  function showFs() { fsBtn.classList.remove('hide'); clearTimeout(hideT); hideT = setTimeout(function () { fsBtn.classList.add('hide'); }, 3000); }
+  document.addEventListener('mousemove', showFs);
+  showFs();
+  fsBtn.addEventListener('click', function () {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen().catch(function () { fsBtn.textContent = 'Tekan F11 untuk layar penuh'; });
+    } catch (e) { fsBtn.textContent = 'Tekan F11 untuk layar penuh'; }
+    try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function () {}); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

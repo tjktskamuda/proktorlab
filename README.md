@@ -1,0 +1,161 @@
+# ProktorLab
+
+Panel proktor untuk lab komputer ujian: **buka dan tutup Exam Browser di semua komputer sekaligus**, tanpa mondar-mandir. Dilengkapi Wake on LAN, shutdown/restart serentak, kirim pesan ke layar siswa, dan **Layar Ujian** hitung mundur untuk TV.
+
+| Bagian | Teknologi | Lokasi |
+|---|---|---|
+| Frontend (panel + layar TV) | HTML/JS statis | GitHub Pages: `https://tjktskamuda.github.io/proktorlab/` |
+| Backend (API) | Google Apps Script | `apps-script/Code.gs`, `apps-script/Agen.gs` |
+| Database | Google Sheets | Spreadsheet tempat Apps Script dipasang |
+| Agen komputer lab | PowerShell (Windows 10/11) | `agent/` (otomatis diunduh dari backend) |
+
+Coba dulu tanpa memasang apa pun: buka panel lalu pilih **Coba mode demo**, atau langsung `https://tjktskamuda.github.io/proktorlab/?demo=1`.
+
+---
+
+## Cara kerja
+
+```
+ HP/laptop proktor ──► GitHub Pages (index.html) ──► Apps Script /exec ──► Google Sheet
+                                                         ▲
+ TV lab ─────────────► GitHub Pages (layar.html) ────────┤
+                                                         │ lapor tiap 10 detik,
+ PC lab A-01 … C-07 ── agen PowerShell (SYSTEM) ─────────┘ ambil perintah antrean
+```
+
+1. Agen di tiap komputer berjalan otomatis sebagai tugas terjadwal Windows (akun SYSTEM) dan melapor ke backend setiap ±10 detik.
+2. Saat proktor menjalankan skrip (misalnya **#Run ExamBrowser**), backend menaruh perintah di antrean komputer tujuan. Agen mengambilnya pada laporan berikutnya.
+3. Untuk jadwal **Pada waktu tertentu**, agen menerima perintah lebih awal lalu menjalankannya tepat pada jamnya, jadi semua komputer serentak.
+4. Exam Browser dibuka di akun Windows yang sedang login. Hasil tiap komputer (Berhasil / Gagal / Kedaluwarsa) tampil di menu **Riwayat**.
+
+## Struktur repo
+
+```
+index.html            Panel proktor (frontend)
+layar.html            Layar Ujian hitung mundur untuk TV
+config.js             Alamat backend (opsional, lihat langkah 3)
+apps-script/
+  Code.gs             Backend: API panel, antrean perintah, login admin
+  Agen.gs             Kode agen PowerShell dalam bentuk teks (dibuat otomatis)
+  appsscript.json     Manifest Apps Script (opsional)
+agent/
+  agent.ps1           Sumber agen komputer lab
+  install.ps1         Pemasang agen
+  uninstall.ps1       Penghapus agen
+tools/
+  make_agen.py        Membuat ulang apps-script/Agen.gs dari folder agent/
+  gasmock.js          Emulator Apps Script untuk uji coba lokal
+```
+
+---
+
+## Pemasangan
+
+### 1. Backend + database (Google Apps Script + Google Sheet)
+
+1. Buka **https://sheets.new**, beri nama spreadsheet **ProktorLab**.
+2. Menu **Ekstensi → Apps Script**. Ganti nama proyek menjadi **ProktorLab**.
+3. Hapus isi `Code.gs`, lalu tempel isi [`apps-script/Code.gs`](apps-script/Code.gs).
+4. Klik **+** di samping *File* → **Skrip** → beri nama `Agen`, lalu tempel isi [`apps-script/Agen.gs`](apps-script/Agen.gs).
+   Cara cepat: buka panel → menu **Panduan & Kode** → tombol **Salin** di tiap file.
+5. Simpan (Ctrl+S). Pilih fungsi **setup** di toolbar → **Jalankan** → izinkan akses (Tinjau izin → Lanjutan → Buka ProktorLab → Izinkan).
+6. **Terapkan → Deployment baru** → ikon roda gigi → **Aplikasi web**:
+   - *Jalankan sebagai*: **Saya**
+   - *Yang memiliki akses*: **Siapa saja**
+7. Klik **Terapkan**, salin **URL aplikasi web** (berakhiran `/exec`).
+
+> Jika pilihan **Siapa saja** tidak ada (akun belajar.id atau akun sekolah yang dibatasi admin), pasang backend memakai akun Gmail pribadi. Komputer lab dan TV harus bisa menghubungi backend tanpa login Google.
+
+Sheet `Endpoint`, `Otomasi`, dan `Hasil` dibuat otomatis di spreadsheet.
+
+### 2. Frontend (GitHub Pages)
+
+Sudah aktif di **https://tjktskamuda.github.io/proktorlab/**. Saat pertama dibuka, panel meminta **URL backend**: tempel URL `/exec` dari langkah 1, lalu buat **kata sandi admin**.
+
+### 3. (Disarankan) Simpan URL backend di `config.js`
+
+Agar HP proktor lain dan TV langsung terhubung tanpa menempel URL, edit [`config.js`](config.js) di GitHub (ikon pensil) dan isi:
+
+```js
+window.PROKTORLAB_CONFIG = {
+  apiUrl: 'https://script.google.com/macros/s/AKfycb.../exec'
+};
+```
+
+Commit, tunggu ±1 menit sampai GitHub Pages diperbarui.
+
+### 4. Pasang agen di setiap komputer lab
+
+Di panel buka menu **Pasang Agen**, pilih grup (misalnya *Lab TJKT 1*), lalu di tiap komputer:
+
+1. Klik kanan **Start** → **Terminal (Admin)** / **Windows PowerShell (Admin)**.
+2. Tempel perintah dari panel, tekan Enter, tunggu tulisan hijau **BERHASIL**.
+
+Atau unduh **pasang-agen.bat** dari menu yang sama, simpan di flashdisk, lalu klik dua kali di tiap komputer.
+
+Komputer muncul di menu **Endpoint** dalam ±10 detik. Pemasang juga mematikan *Fast Startup* dan mengaktifkan *Wake on Magic Packet* agar **#Power ON** bisa dipakai.
+
+### 5. Atur lokasi Exam Browser
+
+Menu **Pustaka Skrip → Konfigurasi Exam Browser**. Pilih preset (Safe Exam Browser, Chrome/Edge mode kiosk) atau isi sendiri:
+
+- **Lokasi file .exe**: klik kanan shortcut Exam Browser → Properties → salin isi kolom *Target*.
+- **Nama proses**: lihat di Task Manager → tab Details (boleh pakai `*`, pisahkan dengan koma).
+
+Lokasi file harus sama di semua komputer.
+
+---
+
+## Pemakaian
+
+- **Dashboard → Aksi cepat ujian**: Buka/Tutup Exam Browser, Nyalakan (WOL), Matikan, untuk semua komputer atau satu grup.
+- **Endpoint**: centang komputer → Buka/Tutup Exam Browser, Reboot, Jalankan Skrip, atur grup & keterangan.
+- **Jalankan Skrip** (3 langkah): pilih skrip → pilih endpoint → jadwal (*Sekarang* atau *Pada waktu tertentu*) + batas waktu penyelesaian.
+- **Riwayat**: status per komputer, batalkan yang belum jalan, ulangi yang gagal.
+- **Layar Ujian**: atur label, nama sekolah, sesi, token, jam mulai/selesai, lalu buka layarnya di browser TV (tekan F11 untuk layar penuh). Tombol *Jadwalkan #Run ExamBrowser saat mulai* membuat Exam Browser terbuka otomatis tepat saat hitung mundur habis.
+
+### Skrip yang tersedia
+
+| Skrip | Fungsi |
+|---|---|
+| #Run ExamBrowser | Membuka Exam Browser di akun yang sedang login |
+| #Close ExamBrowser | Menutup paksa semua proses Exam Browser |
+| #Power ON (Wake On Lan) | Menyalakan komputer yang mati lewat komputer lain yang online |
+| #Shutdown / #Restart | `shutdown.exe /s` atau `/r /f /t 5` |
+| #Log Off / #Kunci Layar | Keluar dari akun / kunci layar |
+| #Kirim Pesan | Pop-up pesan di layar siswa |
+| #Buka Situs | Membuka URL di browser bawaan |
+| #Perbarui Agen | Mengunduh ulang agen terbaru dari backend |
+
+Demi keamanan, panel hanya bisa menjalankan skrip di atas (tidak ada skrip bebas), sehingga link panel yang bocor tidak bisa dipakai menjalankan perintah sembarangan di komputer lab.
+
+### Wake on LAN
+
+- Aktifkan **Wake on LAN** / *Power On by PCI-E* di BIOS tiap komputer.
+- Sinyal dikirim oleh komputer lain yang sedang online di jaringan yang sama. Pasang juga agen di **PC proktor** agar selalu ada pengirim.
+
+---
+
+## Memperbarui
+
+- **Frontend**: edit file di repo ini, GitHub Pages memperbarui otomatis.
+- **Backend**: tempel kode baru di Apps Script, simpan, lalu **Terapkan → Kelola deployment → ikon pensil → Versi baru → Terapkan**. URL tetap sama, agen tidak perlu dipasang ulang.
+- **Agen**: setelah backend diperbarui, jalankan skrip **#Perbarui Agen** ke semua endpoint.
+- Jika mengubah file di `agent/`, buat ulang `apps-script/Agen.gs` dengan `python3 tools/make_agen.py`.
+
+## Mencopot agen
+
+Jalankan perintah *Mencopot agen* dari menu **Pasang Agen** di PowerShell (Admin) komputer tersebut.
+
+## Catatan
+
+- Laporan rutin agen hanya membaca cache Apps Script agar hemat kuota. Jika memasang agen di banyak lab sekaligus dan muncul pesan kuota, naikkan interval di **Pengaturan** menjadi 15–20 detik.
+- *Sekarang* berarti tiap komputer menjalankan perintah pada laporan berikutnya (selisih hingga ±10 detik). Pakai *Pada waktu tertentu* untuk start yang benar-benar serentak.
+- Data login admin disimpan sebagai hash di Script Properties; sesi login berlaku 6 jam sejak aktivitas terakhir.
+
+## Uji coba lokal
+
+```bash
+node tools/gasmock.js 8787          # backend palsu di http://127.0.0.1:8787/exec
+python3 -m http.server 8790         # buka http://localhost:8790/ lalu hubungkan ke URL di atas
+```
