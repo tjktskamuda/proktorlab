@@ -1593,8 +1593,13 @@ VIEWS.agent = {
       '<li>Tunggu tulisan hijau <b>BERHASIL</b>. Komputer akan muncul di menu Endpoint dalam ±10 detik.</li></ol>' +
       '<div class="code-row"><div class="codebox wrap" id="ag-cmd"></div><button class="btn" data-act="copy" data-src="#ag-cmd">' + icon('copy', 'sm') + 'Salin</button></div>' +
       '<div class="h-sec">Cara B · File .bat lewat flashdisk</div>' +
-      '<p style="margin:0" class="muted">Unduh file, simpan di flashdisk, lalu di tiap komputer klik dua kali file tersebut dan pilih <b>Yes</b> saat diminta izin Administrator.</p>' +
-      '<div>' + (IS_LIVE ? '<a class="btn ghost" id="ag-bat" target="_blank" rel="noopener">' + icon('download', 'sm') + 'Unduh pasang-agen.bat</a>' : '<button class="btn ghost" disabled>' + icon('download', 'sm') + 'Unduh pasang-agen.bat (tersedia setelah dipasang)</button>') + '</div>' +
+      '<p style="margin:0" class="muted">Unduh file, simpan di flashdisk, lalu di tiap komputer klik dua kali file tersebut dan pilih <b>Yes</b> saat diminta izin Administrator. Jika Chrome memberi peringatan file berbahaya, pilih <b>Simpan / Keep</b> (file .bat memang selalu diberi peringatan).</p>' +
+      '<div>' + (IS_LIVE ? '<button class="btn ghost" data-act="dl-bat" id="ag-bat">' + icon('download', 'sm') + '<span id="ag-bat-name">Unduh pasang-agen.bat</span></button>' : '<button class="btn ghost" disabled>' + icon('download', 'sm') + 'Unduh pasang-agen.bat (tersedia setelah terhubung ke backend)</button>') + '</div>' +
+      '<details class="box" style="font-size:13.5px"><summary style="cursor:pointer;font-weight:700">Tidak bisa mengunduh? Buat file .bat sendiri dengan Notepad</summary>' +
+      '<ol class="howto" style="margin-top:10px"><li>Klik <b>Salin isi file</b> di bawah.</li>' +
+      '<li>Buka <b>Notepad</b>, tempel (Ctrl+V).</li>' +
+      '<li>Pilih <b>File → Save As</b>. Ubah <i>Save as type</i> menjadi <b>All files (*.*)</b>, beri nama <span class="mono">pasang-agen.bat</span>, simpan ke flashdisk.</li></ol>' +
+      '<div class="code-row" style="margin-top:10px"><div class="codebox" id="ag-batsrc" style="max-height:220px;overflow:auto"></div><button class="btn ghost" data-act="copy" data-src="#ag-batsrc">' + icon('copy', 'sm') + 'Salin isi file</button></div></details>' +
       '</div></section>' +
       '<div class="split"><section class="card"><div class="hd"><h2>Agar #Power ON (Wake on LAN) berfungsi</h2></div><div class="bd"><ol class="howto">' +
       '<li>Di BIOS/UEFI tiap komputer, aktifkan <b>Wake on LAN</b> (kadang bernama <i>Power On by PCI-E</i> atau <i>Resume by LAN</i>).</li>' +
@@ -1617,10 +1622,42 @@ VIEWS.agent = {
     var u = base + (g ? '&g=' + encodeURIComponent(g).replace(/'/g, '%27') : '');
     $('#ag-cmd').textContent = "[Net.ServicePointManager]::SecurityProtocol=3072; irm '" + u + "' -UseBasicParsing | iex";
     $('#ag-un').textContent = "[Net.ServicePointManager]::SecurityProtocol=3072; irm '" + base.replace('f=install', 'f=uninstall') + "' -UseBasicParsing | iex";
-    var bat = $('#ag-bat');
-    if (bat) bat.href = u.replace('f=install', 'f=bat');
+    var slug = String(g || 'semua').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'lab';
+    VIEWS.agent._bat = { text: buildBat(u), name: 'pasang-agen-' + slug + '.bat' };
+    $('#ag-batsrc').textContent = VIEWS.agent._bat.text;
+    var nm = $('#ag-bat-name');
+    if (nm) nm.textContent = 'Unduh ' + VIEWS.agent._bat.name;
   }
 };
+
+/* Isi file .bat dibuat langsung di browser (tidak lewat server Google) supaya
+   tidak terhalang aturan unduhan. Sama dengan buildBat_() di Code.gs. */
+function buildBat(installUrl) {
+  var u = installUrl.replace(/%/g, '%%');
+  return [
+    '@echo off',
+    'title Pasang Agen ProktorLab',
+    'net session >nul 2>&1',
+    'if %errorlevel% neq 0 (',
+    '  echo Meminta hak Administrator...',
+    '  powershell -NoProfile -Command "Start-Process -FilePath \'%~f0\' -Verb RunAs"',
+    '  exit /b',
+    ')',
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=3072; irm \'' + u + '\' -UseBasicParsing | iex"',
+    'echo.',
+    'pause',
+    ''
+  ].join('\r\n');
+}
+function downloadText(text, name) {
+  var blob = new Blob([text], { type: 'application/octet-stream' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
 
 /* ---------- PENGATURAN ---------- */
 VIEWS.settings = {
@@ -2092,6 +2129,13 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'copy': copyText($(el.getAttribute('data-src')).textContent); break;
+    case 'dl-bat': {
+      var bt = VIEWS.agent._bat;
+      if (!bt) break;
+      downloadText(bt.text, bt.name);
+      toast(bt.name + ' diunduh. Cek folder Unduhan (Downloads).');
+      break;
+    }
     case 'regen-key':
       confirmBox('Ganti kunci agen?', '<div>Semua agen yang sudah terpasang <b>berhenti terhubung</b> dan harus dipasang ulang dengan perintah baru. Lakukan hanya jika kunci bocor.</div>', 'Ganti kunci', true).then(function (ok) {
         if (!ok) return;
