@@ -387,12 +387,29 @@ var SCRIPT = {};
 SCRIPTS.forEach(function (s) { SCRIPT[s.id] = s; });
 
 var PRESETS = {
-  seb: { label: 'Safe Exam Browser', path: 'C:\\Program Files\\SafeExamBrowser\\Application\\SafeExamBrowser.exe', args: '', proc: 'SafeExamBrowser*' },
-  exambro: { label: 'Exam Browser (.exe lain)', path: 'C:\\Program Files\\ExamBrowser\\ExamBrowser.exe', args: '', proc: 'ExamBrowser' },
+  seb: { label: 'Safe Exam Browser', path: 'C:\\Program Files\\SafeExamBrowser\\Application\\SafeExamBrowser.exe\nC:\\Program Files (x86)\\SafeExamBrowser\\Application\\SafeExamBrowser.exe', args: '', proc: 'SafeExamBrowser*' },
+  exambro: { label: 'Exam Browser (.exe lain)', path: 'C:\\Program Files\\ExamBrowser\\ExamBrowser.exe\nC:\\Program Files (x86)\\ExamBrowser\\ExamBrowser.exe', args: '', proc: 'ExamBrowser' },
   chrome: { label: 'Google Chrome mode kiosk', path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', args: '--kiosk --incognito https://cbt.sekolah.sch.id', proc: 'chrome' },
   edge: { label: 'Microsoft Edge mode kiosk', path: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', args: '--kiosk https://cbt.sekolah.sch.id --edge-kiosk-type=fullscreen --no-first-run', proc: 'msedge' },
   custom: { label: 'Kustom (isi sendiri)', path: '', args: '', proc: '' }
 };
+function pathLines(t) {
+  return String(t || '').split(/\r?\n|\|/).map(function (x) { return x.trim().replace(/^"|"$/g, ''); }).filter(Boolean);
+}
+/* Apakah lokasi yang dipakai agen berasal dari pencarian otomatis (bukan dari daftar lokasi)? */
+function examViaAuto(e) {
+  if (!e.examPath) return false;
+  var list = pathLines(e.examOverride).concat(pathLines(S.settings && S.settings.examPath)).map(function (x) { return x.toLowerCase(); });
+  return list.indexOf(String(e.examPath).toLowerCase()) < 0;
+}
+function examCell(e) {
+  if (!e.online) return '<span class="muted">-</span>';
+  var tag = e.examOverride ? ' <span class="muted" style="font-size:11.5px">· khusus</span>' : '';
+  if (e.examOk === true) return '<span class="chip run" title="' + esc(e.examPath) + '">Siap</span>' + (examViaAuto(e) ? ' <span class="muted" style="font-size:11.5px">· otomatis</span>' : tag);
+  if (e.examOk === false) return '<span class="chip Gagal" title="Exam Browser tidak ditemukan di komputer ini">Tidak ditemukan</span>' + tag;
+  if (e.agentOld) return '<span class="chip no" title="Jalankan #Perbarui Agen">Perbarui agen</span>';
+  return '<span class="muted">Memeriksa…</span>';
+}
 
 var TZ = {
   'Asia/Jakarta': { label: 'WIB', off: 7 },
@@ -593,6 +610,13 @@ function act(action, data, okMsg) {
 var Demo = (function () {
   var st = null;
   var DEMO_KEY = 'demo0a1b2c3d4e5f60718293a4b5c6d7e8f9';
+  var DEMO_REAL = 'C:\\Program Files\\SafeExamBrowser\\Application\\SafeExamBrowser.exe';
+  function demoExam(e) {
+    var list = pathLines(e.examOverride).concat(pathLines(st.settings.examPath)).map(function (x) { return x.toLowerCase(); });
+    if (list.indexOf(e.examReal.toLowerCase()) >= 0) return { ok: true, path: e.examReal, tried: list };
+    if (st.settings.examAuto !== false && e.examFindable) return { ok: true, path: e.examReal, tried: list };
+    return { ok: false, path: '', tried: list };
+  }
   function seed() {
     var t = Date.now();
     var eps = [];
@@ -603,15 +627,21 @@ var Demo = (function () {
       eps.push({
         id: id, name: id, group: group, comment: opt.comment || '', user: opt.user != null ? opt.user : id + '\\Siswa Ujian',
         loggedIn: opt.user !== '', ip: '192.168.10.' + (macN + 10), mac: 'D8:BB:C1:4A:' + pad(Math.floor(macN / 10)) + ':' + pad(macN % 100).slice(-2),
-        bc: '192.168.10.255', os: 'Windows 11 Pro (24H2)', ver: '1.0.0', online: !opt.off, exam: false,
-        seen: opt.off ? t - 3600000 * 17 : t - Math.random() * 8000, reg: t - 86400000 * 12
+        bc: '192.168.10.255', os: 'Windows 11 Pro (24H2)', ver: '1.1.0', online: !opt.off, exam: false,
+        seen: opt.off ? t - 3600000 * 17 : t - Math.random() * 8000, reg: t - 86400000 * 12,
+        examOverride: '', examReal: opt.real || DEMO_REAL, examFindable: opt.findable !== false
       });
     }
     ['A', 'B', 'C'].forEach(function (row) {
       var n = row === 'B' ? 9 : 7;
       for (var i = 1; i <= n; i++) {
         var id = row + '-' + pad(i);
-        mk(id, 'Lab TJKT 1', { off: id === 'B-05' || id === 'C-07', comment: id === 'A-04' ? 'Mouse kadang macet' : '' });
+        var o = { off: id === 'B-05' || id === 'C-07', comment: id === 'A-04' ? 'Mouse kadang macet' : '' };
+        // contoh komputer yang lokasi Exam Browser-nya berbeda
+        if (id === 'A-06') o.real = 'C:\\Program Files (x86)\\SafeExamBrowser\\Application\\SafeExamBrowser.exe';
+        if (id === 'B-03') o.real = 'D:\\SEB\\SafeExamBrowser.exe';
+        if (id === 'C-02') { o.real = 'D:\\Data Guru\\Aplikasi Ujian\\SEB\\App\\SafeExamBrowser.exe'; o.findable = false; }
+        mk(id, 'Lab TJKT 1', o);
       }
     });
     for (var j = 1; j <= 6; j++) mk('L2-' + pad(j), 'Lab TJKT 2', { off: true });
@@ -624,7 +654,7 @@ var Demo = (function () {
     }
     st = {
       settings: { school: 'SMKN 1 Murung Pudak', tz: 'Asia/Makassar', interval: 10, examPreset: 'seb',
-        examPath: PRESETS.seb.path, examArgs: '', examProc: PRESETS.seb.proc, groups: [NEW_GROUP, 'Lab TJKT 1', 'Lab TJKT 2', 'Ruang Proktor'], defaultGroup: NEW_GROUP },
+        examPath: PRESETS.seb.path, examAuto: true, examArgs: '', examProc: PRESETS.seb.proc, groups: [NEW_GROUP, 'Lab TJKT 1', 'Lab TJKT 2', 'Ruang Proktor'], defaultGroup: NEW_GROUP },
       eps: eps, jobs: [], rows: {}, layar: lay, key: DEMO_KEY
     };
     // contoh riwayat
@@ -664,10 +694,13 @@ var Demo = (function () {
     var user = e.loggedIn ? e.user : '';
     var noUser = 'Tidak ada pengguna yang sedang login di komputer ini.';
     switch (job.action) {
-      case 'run_exam':
+      case 'run_exam': {
         if (!user) return setRow(job, epId, 'Gagal', noUser);
         if (e.exam) return setRow(job, epId, 'Berhasil', 'Exam Browser sudah berjalan.');
-        e.exam = true; return setRow(job, epId, 'Berhasil', 'Exam Browser dibuka untuk ' + user + '.');
+        var ex = demoExam(e);
+        if (!ex.ok) return setRow(job, epId, 'Gagal', 'Exam Browser tidak ditemukan di komputer ini. Pencarian otomatis juga tidak menemukan. Atur lokasi khusus komputer ini di panel (menu Endpoint).');
+        e.exam = true; return setRow(job, epId, 'Berhasil', 'Exam Browser dibuka untuk ' + user + ' (' + ex.path + ').');
+      }
       case 'close_exam':
         if (!e.exam) return setRow(job, epId, 'Berhasil', 'Tidak ada Exam Browser yang berjalan.');
         e.exam = false; return setRow(job, epId, 'Berhasil', 'Exam Browser ditutup (2 proses).');
@@ -748,7 +781,16 @@ var Demo = (function () {
         url: 'https://script.google.com/macros/s/AKfycbx-CONTOH-URL-WEB-APP/exec', key: st.key,
         installUrl: 'https://script.google.com/macros/s/AKfycbx-CONTOH-URL-WEB-APP/exec?f=install&k=' + st.key, now: Date.now() };
     },
-    endpoints: function () { return { endpoints: st.eps.map(function (e) { return Object.assign({}, e, { user: e.loggedIn || !e.online ? e.user : '' }); }), now: Date.now() }; },
+    endpoints: function () {
+      return { endpoints: st.eps.map(function (e) {
+        var ex = demoExam(e);
+        return Object.assign({}, e, { user: e.loggedIn || !e.online ? e.user : '', examOk: e.online ? ex.ok : null, examPath: e.online ? ex.path : '', agentOld: false });
+      }), now: Date.now() };
+    },
+    setExamPath: function (d) {
+      (d.ids || []).forEach(function (id) { var e = ep(id); if (e) e.examOverride = pathLines(d.path).join('\n'); });
+      return { ok: true };
+    },
     createJob: function (d) {
       var targets = (d.targets || []).filter(function (t) { return ep(t); });
       if (!targets.length) throw new Error('Pilih minimal satu endpoint.');
@@ -785,6 +827,7 @@ var Demo = (function () {
     },
     clearHistory: function () { st.jobs = []; st.rows = {}; return { ok: true }; },
     saveSettings: function (d) {
+      if (d.examAuto != null) st.settings.examAuto = !!d.examAuto;
       ['school', 'tz', 'examPreset', 'examPath', 'examArgs', 'examProc', 'defaultGroup'].forEach(function (k) { if (d[k] != null) st.settings[k] = String(d[k]); });
       if (d.interval != null) st.settings.interval = Math.min(120, Math.max(5, Math.round(Number(d.interval) || 10)));
       persistLayar();
@@ -1064,7 +1107,7 @@ function startPolling() {
   timers.clock = setInterval(function () { tickClock(); var v = VIEWS[S.view.name]; if (v && v.tick) v.tick(); }, 1000);
   timers.ep = setInterval(function () {
     if (document.hidden) return;
-    if (['dash', 'eps', 'layar'].indexOf(S.view.name) < 0 && !$('.modal')) return;
+    if (['dash', 'eps', 'layar', 'scripts'].indexOf(S.view.name) < 0 && !$('.modal')) return;
     refreshEndpoints();
   }, IS_LIVE ? 5000 : 2000);
   timers.job = setInterval(function () {
@@ -1101,6 +1144,11 @@ function refreshEndpoints() {
 function applyEndpointUpdate() {
   var v = VIEWS[S.view.name];
   if (v && v.update) v.update();
+  var es = $('#ep-exam-status');
+  if (es) {
+    var e1 = S.endpoints.filter(function (x) { return x.id === es.getAttribute('data-id'); })[0];
+    if (e1) es.innerHTML = examStatusHtml(e1);
+  }
   if (Wizard.open) Wizard.refreshEps();
 }
 /* jangan ganti isi tabel saat jari/mouse sedang menekan, supaya klik tidak hilang */
@@ -1178,6 +1226,7 @@ VIEWS.dash = {
     el.innerHTML =
       '<div class="page-h"><div><h1>Dashboard</h1><p>Ringkasan komputer lab dan aksi cepat untuk sesi ujian.</p></div>' +
       '<div class="act"><button class="btn" data-act="wizard">' + icon('play', 'sm') + 'Jalankan Skrip</button></div></div>' +
+      '<div id="d-alert"></div>' +
       '<div class="grid g-dash">' +
       '<section class="card c12"><div class="hd"><h2>Aksi cepat ujian</h2><span class="sub">Satu klik untuk semua komputer, tanpa mondar-mandir.</span></div><div class="bd">' +
       '<div class="quick-hd"><label class="muted" for="qg">Target</label><select class="inp" id="qg">' + gopts + '</select><span class="muted" id="qg-info"></span></div>' +
@@ -1204,6 +1253,19 @@ VIEWS.dash = {
     var ex = on.filter(function (e) { return e.exam; });
     var stats = $('#d-stats');
     if (!stats) return;
+    var miss = on.filter(function (e) { return e.examOk === false; });
+    var al = $('#d-alert');
+    if (al) {
+      var sig = miss.map(function (e) { return e.id; }).join(',');
+      if (al.getAttribute('data-sig') !== sig) {
+        al.setAttribute('data-sig', sig);
+        al.innerHTML = miss.length ? '<div class="box warn" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' + icon('alert') +
+          '<div style="flex:1;min-width:220px"><b>' + miss.length + ' komputer tidak menemukan Exam Browser:</b> ' +
+          esc(miss.slice(0, 12).map(function (e) { return e.name; }).join(', ')) + (miss.length > 12 ? ', …' : '') +
+          '<div class="muted" style="font-size:13px">Lokasi file di komputer tersebut berbeda. Atur lokasi khususnya agar #Run ExamBrowser berhasil.</div></div>' +
+          '<button class="btn sm" data-act="show-missing">Atur lokasi</button></div>' : '';
+      }
+    }
     stats.innerHTML =
       '<div class="stat">' + icon('network') + '<div><b>' + eps.length + '</b><span>Endpoint</span></div></div>' +
       '<div class="stat">' + icon('monitor', 'okc') + '<div><b>' + on.length + '</b><span>Online</span></div></div>' +
@@ -1297,12 +1359,12 @@ VIEWS.eps = {
       '<div class="filters">' +
       '<div class="search">' + icon('search', 'sm') + '<input class="inp" id="f-q" placeholder="Cari nama, user, IP, MAC…" value="' + esc(f.q) + '"></div>' +
       '<select class="inp" id="f-st" aria-label="Status"><option value="">Status: Semua</option><option value="on"' + (f.st === 'on' ? ' selected' : '') + '>Online</option><option value="off"' + (f.st === 'off' ? ' selected' : '') + '>Offline</option></select>' +
-      '<select class="inp" id="f-ex" aria-label="Exam Browser"><option value="">Exam Browser: Semua</option><option value="run"' + (f.ex === 'run' ? ' selected' : '') + '>Berjalan</option><option value="no"' + (f.ex === 'no' ? ' selected' : '') + '>Tidak berjalan</option></select>' +
+      '<select class="inp" id="f-ex" aria-label="Exam Browser"><option value="">Exam Browser: Semua</option><option value="run"' + (f.ex === 'run' ? ' selected' : '') + '>Berjalan</option><option value="no"' + (f.ex === 'no' ? ' selected' : '') + '>Tidak berjalan</option><option value="missing"' + (f.ex === 'missing' ? ' selected' : '') + '>Lokasi tidak ditemukan</option></select>' +
       '<select class="inp" id="f-os" aria-label="OS"><option value="">OS: Semua</option>' + Object.keys(oses).sort().map(function (o) { return '<option' + (f.os === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>' +
       '<span class="count" id="ep-count"></span></div></div>' +
       '<div class="tbl-wrap"><table class="tbl"><thead><tr>' +
       '<th class="chk"><input type="checkbox" id="sel-all" aria-label="Pilih semua"></th>' +
-      th('name', 'Nama') + th('comment', 'Keterangan') + th('user', 'User') + th('online', 'Status') + th('exam', 'Exam Browser') +
+      th('name', 'Nama') + th('comment', 'Keterangan') + th('user', 'User') + th('online', 'Status') + th('exam', 'Exam Browser') + th('examOk', 'Lokasi Exam') +
       th('ip', 'Alamat IP') + th('mac', 'MAC') + (g ? '' : th('group', 'Grup')) + th('os', 'OS') + th('seen', 'Terakhir online') +
       '</tr></thead><tbody id="ep-body"></tbody></table></div>' +
       '<div class="tbl-foot" id="ep-foot"></div></section>';
@@ -1327,6 +1389,7 @@ VIEWS.eps = {
       if (f.st === 'off' && e.online) return false;
       if (f.ex === 'run' && !e.exam) return false;
       if (f.ex === 'no' && e.exam) return false;
+      if (f.ex === 'missing' && e.examOk !== false) return false;
       if (f.os && e.os !== f.os) return false;
       if (q && [e.name, e.user, e.ip, e.mac, e.comment, e.group].join(' ').toLowerCase().indexOf(q) < 0) return false;
       return true;
@@ -1362,12 +1425,13 @@ VIEWS.eps = {
         '<td class="user">' + (e.user ? esc(e.user) : '<span class="muted">' + (e.online ? 'Tidak ada yang login' : '-') + '</span>') + '</td>' +
         '<td><span class="st ' + (e.online ? 'on' : 'off') + '">' + (e.online ? 'Terhubung' : 'Terputus') + '</span></td>' +
         '<td>' + (e.exam ? '<span class="chip run">Berjalan</span>' : '<span class="chip no">' + (e.online ? 'Tidak' : '-') + '</span>') + '</td>' +
+        '<td class="nowrap">' + examCell(e) + '</td>' +
         '<td class="mono nowrap">' + esc(e.ip || '-') + '</td>' +
         '<td class="mono nowrap">' + esc(e.mac || '-') + '</td>' +
         (g ? '' : '<td class="nowrap">' + esc(e.group) + '</td>') +
         '<td class="nowrap">' + esc(e.os || '-') + '</td>' +
         '<td class="nowrap muted">' + (e.online ? 'Sekarang' : esc(ago(e.seen))) + '</td></tr>';
-    }).join('') : '<tr><td colspan="11"><div class="empty">' + icon('monitor') + '<div><b>Belum ada endpoint di sini.</b></div>' +
+    }).join('') : '<tr><td colspan="12"><div class="empty">' + icon('monitor') + '<div><b>Belum ada endpoint di sini.</b></div>' +
       '<div>' + (S.endpoints.length ? 'Ubah filter atau pencarian.' : 'Pasang agen di komputer lab, nanti komputer muncul otomatis.') + '</div>' +
       (S.endpoints.length ? '' : '<div style="margin-top:12px"><button class="btn" data-act="go" data-v="agent">Pasang agen</button></div>') + '</div></td></tr>';
     var on = all.filter(function (e) { return e.online; }).length;
@@ -1391,6 +1455,9 @@ function th(key, label) {
   var on = S.sort.key === key;
   return '<th class="sort" data-act="sort" data-k="' + key + '">' + esc(label) + (on ? (S.sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>';
 }
+function examStatusHtml(e) {
+  return examCell(e) + (e.examPath ? '<div class="mono" style="margin-top:4px;overflow-wrap:anywhere">' + esc(e.examPath) + '</div>' : '');
+}
 function epDetail(id) {
   var e = S.endpoints.filter(function (x) { return x.id === id; })[0];
   if (!e) return;
@@ -1399,11 +1466,17 @@ function epDetail(id) {
     '<button class="x" data-act="close">' + icon('x') + '</button></div><div class="mb">' +
     '<dl class="kv"><dt>Grup</dt><dd>' + esc(e.group) + '</dd><dt>User</dt><dd>' + esc(e.user || '-') + '</dd>' +
     '<dt>Exam Browser</dt><dd>' + (e.exam ? '<span class="chip run">Berjalan</span>' : 'Tidak berjalan') + '</dd>' +
+    '<dt>Lokasi Exam</dt><dd id="ep-exam-status" data-id="' + esc(e.id) + '">' + examStatusHtml(e) + '</dd>' +
     '<dt>Alamat IP</dt><dd class="mono">' + esc(e.ip || '-') + '</dd><dt>MAC</dt><dd class="mono">' + esc(e.mac || '-') + '</dd>' +
     '<dt>OS</dt><dd>' + esc(e.os || '-') + '</dd><dt>Versi agen</dt><dd>' + esc(e.ver || '-') + '</dd>' +
     '<dt>Terakhir online</dt><dd>' + (e.online ? 'Sekarang' : esc(ago(e.seen))) + '</dd><dt>Terdaftar</dt><dd>' + esc(fDT(e.reg)) + '</dd></dl>' +
     '<label class="f">Keterangan<input class="inp" id="ep-cm" value="' + esc(e.comment) + '" maxlength="120" placeholder="Misal: keyboard rusak"></label>' +
     '<div><button class="btn ghost sm" data-act="save-comment" data-id="' + esc(e.id) + '">Simpan keterangan</button></div>' +
+    '<div class="h-sec">Lokasi Exam Browser khusus komputer ini</div>' +
+    '<div class="muted" style="font-size:13px;margin-top:-8px">Isi hanya jika lokasi di komputer ini berbeda. Dicoba lebih dulu sebelum lokasi umum di Pustaka Skrip. Satu lokasi per baris.</div>' +
+    '<textarea class="inp mono" id="ep-exam" rows="2" spellcheck="false" placeholder="D:\\Aplikasi\\SafeExamBrowser\\SafeExamBrowser.exe">' + esc(e.examOverride || '') + '</textarea>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" data-act="save-exam-one" data-id="' + esc(e.id) + '">Simpan lokasi khusus</button>' +
+    (e.examOverride ? '<button class="btn ghost sm" data-act="clear-exam-one" data-id="' + esc(e.id) + '">Hapus lokasi khusus</button>' : '') + '</div>' +
     '<div class="h-sec">Tindakan untuk komputer ini</div><div class="btn-grid">' +
     ['run_exam', 'close_exam', 'wol', 'restart', 'shutdown', 'lock', 'message', 'logoff'].map(function (a) {
       return '<button class="btn ghost" data-act="one-run" data-a="' + a + '" data-id="' + esc(e.id) + '">' + icon(SCRIPT[a].icon, 'sm') + esc(SCRIPT[a].name) + '</button>';
@@ -1503,6 +1576,19 @@ VIEWS.job = {
 
 /* ---------- PUSTAKA SKRIP ---------- */
 VIEWS.scripts = {
+  update: function () {
+    var el = $('#ex-status');
+    if (!el) return;
+    var on = S.endpoints.filter(function (e) { return e.online; });
+    var ok = on.filter(function (e) { return e.examOk === true; }).length;
+    var auto = on.filter(function (e) { return e.examOk === true && examViaAuto(e); }).length;
+    var miss = on.filter(function (e) { return e.examOk === false; }).length;
+    var old = on.filter(function (e) { return e.examOk == null && e.agentOld; }).length;
+    el.innerHTML = on.length ? '<div class="box" style="font-size:13px;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><b>Di ' + on.length + ' komputer online:</b>' +
+      '<span class="chip run">' + ok + ' siap</span>' + (auto ? '<span class="muted">(' + auto + ' ditemukan otomatis)</span>' : '') +
+      (miss ? '<span class="chip Gagal">' + miss + ' tidak ditemukan</span><button type="button" class="link-btn" data-act="show-missing">Lihat & atur</button>' : '') +
+      (old ? '<span class="chip no">' + old + ' agen versi lama</span>' : '') + '</div>' : '';
+  },
   mount: function (el) {
     var s = S.settings;
     el.innerHTML = '<div class="page-h"><div><h1>Pustaka Skrip</h1><p>Skrip yang bisa dijalankan ke endpoint. Atur dulu lokasi Exam Browser yang dipakai sekolah.</p></div></div>' +
@@ -1513,11 +1599,13 @@ VIEWS.scripts = {
       }).join('') + '</div></section>' +
       '<section class="card"><div class="hd"><h2>Konfigurasi Exam Browser</h2></div><form class="bd" id="exam-form" style="display:flex;flex-direction:column;gap:14px">' +
       '<label class="f">Aplikasi<select class="inp" id="ex-preset">' + Object.keys(PRESETS).map(function (k) { return '<option value="' + k + '"' + (s.examPreset === k ? ' selected' : '') + '>' + esc(PRESETS[k].label) + '</option>'; }).join('') + '</select></label>' +
-      '<label class="f">Lokasi file .exe<input class="inp mono" id="ex-path" value="' + esc(s.examPath) + '" placeholder="C:\\Program Files\\...\\ExamBrowser.exe">' +
+      '<label class="f">Lokasi file .exe <span class="hint">boleh lebih dari satu, satu lokasi per baris. Agen mencoba dari atas ke bawah.</span><textarea class="inp mono" id="ex-path" rows="4" spellcheck="false" placeholder="C:\\Program Files\\...\\ExamBrowser.exe">' + esc(s.examPath) + '</textarea>' +
       '<span class="hint">Cara mencari: klik kanan shortcut Exam Browser di desktop → Properties → salin isi kolom <b>Target</b> (tanpa tanda kutip).</span></label>' +
       '<label class="f">Argumen tambahan <span class="hint">opsional, misalnya alamat ujian atau file konfigurasi .seb</span><input class="inp mono" id="ex-args" value="' + esc(s.examArgs) + '"></label>' +
       '<label class="f">Nama proses <span class="hint">untuk deteksi & #Close ExamBrowser. Pisahkan dengan koma, boleh pakai *</span><input class="inp mono" id="ex-proc" value="' + esc(s.examProc) + '"></label>' +
-      '<div class="box info" style="font-size:13px">Lokasi file harus sama di semua komputer lab. Cek nama proses lewat Task Manager → tab Details.</div>' +
+      '<label class="radio" style="font-size:13.5px"><input type="checkbox" id="ex-auto"' + (s.examAuto !== false ? ' checked' : '') + '><span><b>Cari otomatis</b> jika semua lokasi di atas tidak ada di sebuah komputer <span class="muted">(Program Files, shortcut Desktop & Start Menu, folder pengguna, drive D/E)</span></span></label>' +
+      '<div class="box info" style="font-size:13px">Ada komputer yang lokasinya berbeda? Tambahkan lokasinya di daftar di atas, atau atur <b>lokasi khusus</b> untuk komputer tertentu: menu Endpoint → centang komputer → <b>Atur Endpoint → Atur lokasi Exam Browser</b>. Cek nama proses lewat Task Manager → tab Details.</div>' +
+      '<div id="ex-status"></div>' +
       '<div><button class="btn" type="submit">Simpan konfigurasi</button></div></form></section></div>';
     $('#ex-preset').addEventListener('change', function () {
       var p = PRESETS[this.value];
@@ -1525,9 +1613,10 @@ VIEWS.scripts = {
     });
     $('#exam-form').addEventListener('submit', function (e) {
       e.preventDefault();
-      act('saveSettings', { examPreset: $('#ex-preset').value, examPath: $('#ex-path').value.trim(), examArgs: $('#ex-args').value.trim(), examProc: $('#ex-proc').value.trim() },
-        'Konfigurasi Exam Browser disimpan. Agen memakai pengaturan baru dalam beberapa detik.').then(function (r) { S.settings = r.settings; });
+      act('saveSettings', { examPreset: $('#ex-preset').value, examPath: pathLines($('#ex-path').value).join('\n'), examAuto: $('#ex-auto').checked, examArgs: $('#ex-args').value.trim(), examProc: $('#ex-proc').value.trim() },
+        'Konfigurasi Exam Browser disimpan. Agen memakai pengaturan baru dalam beberapa detik.').then(function (r) { S.settings = r.settings; VIEWS.scripts.update(); });
     });
+    this.update();
   }
 };
 
@@ -1947,7 +2036,7 @@ document.addEventListener('click', function (e) {
     return;
   }
   var a = el.getAttribute('data-act');
-  var dmenu = $('.drop-menu'); if (dmenu && a !== 'org-menu' && !el.closest('.drop-menu')) dmenu.remove();
+  var dmenu = $('.drop-menu'); if (dmenu && a !== 'org-menu') dmenu.remove();
   var id = el.getAttribute('data-id');
   switch (a) {
     case 'go': {
@@ -2023,6 +2112,44 @@ document.addEventListener('click', function (e) {
     }
     case 'one-run': closeLayer(); runQuick(el.getAttribute('data-a'), [id], id); break;
     case 'ep-detail': epDetail(id); break;
+    case 'save-exam-one':
+    case 'clear-exam-one': {
+      var pth = a === 'clear-exam-one' ? '' : pathLines($('#ep-exam').value).join('\n');
+      if (a === 'save-exam-one' && !pth) { toast('Isi lokasi file .exe dulu, atau pakai Hapus lokasi khusus.', true); break; }
+      act('setExamPath', { ids: [id], path: pth }, pth ? 'Lokasi khusus ' + id + ' disimpan. Agen memeriksa ulang dalam beberapa detik.' : 'Lokasi khusus ' + id + ' dihapus.')
+        .then(refreshEndpoints).then(function () { epDetail(id); });
+      break;
+    }
+    case 'org-exam': {
+      var idsX = Object.keys(S.sel);
+      var epsX = S.endpoints.filter(function (x) { return S.sel[x.id]; });
+      var same = epsX.length && epsX.every(function (x) { return (x.examOverride || '') === (epsX[0].examOverride || ''); }) ? (epsX[0].examOverride || '') : '';
+      var found = epsX.filter(function (x) { return x.examPath; }).map(function (x) { return '<div><b>' + esc(x.name) + '</b> <span class="mono">' + esc(x.examPath) + '</span></div>'; }).join('');
+      openModal('<form id="exf"><div class="mh"><h3>Lokasi Exam Browser · ' + idsX.length + ' komputer</h3><button type="button" class="x" data-act="close">' + icon('x') + '</button></div>' +
+        '<div class="mb"><div class="muted" style="font-size:13px">Lokasi khusus dicoba lebih dulu, lalu lokasi umum di Pustaka Skrip, lalu pencarian otomatis. Satu lokasi per baris.</div>' +
+        '<label class="f">Lokasi file .exe untuk ' + esc(idsX.slice(0, 6).join(', ')) + (idsX.length > 6 ? ', …' : '') +
+        '<textarea class="inp mono" id="exf-path" rows="3" spellcheck="false" placeholder="D:\\Aplikasi\\SafeExamBrowser\\SafeExamBrowser.exe">' + esc(same) + '</textarea>' +
+        '<span class="hint">Cara mencari: di komputer itu, klik kanan shortcut Exam Browser → Properties → salin isi kolom Target (tanpa tanda kutip).</span></label>' +
+        (found ? '<details class="box" style="font-size:13px"><summary style="cursor:pointer;font-weight:700">Lokasi yang sedang dipakai agen</summary><div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere">' + found + '</div></details>' : '') +
+        '</div><div class="mf"><button type="button" class="btn ghost" id="exf-clear">Hapus lokasi khusus</button><span class="sp"></span><button type="button" class="btn ghost" data-act="close">Batal</button><button class="btn" type="submit">Simpan</button></div></form>');
+      var saveX = function (pathX) {
+        closeLayer();
+        act('setExamPath', { ids: idsX, path: pathX }, pathX ? 'Lokasi khusus disimpan untuk ' + idsX.length + ' komputer.' : 'Lokasi khusus dihapus dari ' + idsX.length + ' komputer.')
+          .then(refreshEndpoints);
+      };
+      $('#exf').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var v = pathLines($('#exf-path').value).join('\n');
+        if (!v) { toast('Isi lokasi file .exe dulu.', true); return; }
+        saveX(v);
+      });
+      $('#exf-clear').onclick = function () { saveX(''); };
+      break;
+    }
+    case 'show-missing':
+      S.filt = { q: '', st: '', ex: 'missing', os: '' };
+      go('eps', {});
+      break;
     case 'save-comment':
       act('setComment', { id: id, comment: $('#ep-cm').value.trim() }, 'Keterangan disimpan.').then(refreshEndpoints);
       break;
@@ -2034,6 +2161,7 @@ document.addEventListener('click', function (e) {
       m.className = 'drop-menu';
       m.innerHTML = '<button data-act="org-move"' + (n ? '' : ' disabled') + '>' + icon('folder', 'sm') + 'Pindahkan ke grup…</button>' +
         '<button data-act="org-comment"' + (n === 1 ? '' : ' disabled') + '>' + icon('edit', 'sm') + 'Ubah keterangan…</button>' +
+        '<button data-act="org-exam"' + (n ? '' : ' disabled') + '>' + icon('folder', 'sm') + 'Atur lokasi Exam Browser…</button>' +
         '<button data-act="org-delete" class="red"' + (n ? '' : ' disabled') + '>' + icon('trash', 'sm') + 'Hapus dari panel…</button>';
       el.parentNode.appendChild(m);
       break;

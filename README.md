@@ -99,10 +99,17 @@ Komputer muncul di menu **Endpoint** dalam ±10 detik. Pemasang juga mematikan *
 
 Menu **Pustaka Skrip → Konfigurasi Exam Browser**. Pilih preset (Safe Exam Browser, Chrome/Edge mode kiosk) atau isi sendiri:
 
-- **Lokasi file .exe**: klik kanan shortcut Exam Browser → Properties → salin isi kolom *Target*.
+- **Lokasi file .exe**: boleh lebih dari satu, **satu lokasi per baris**. Agen mencoba dari atas ke bawah. Cara mencari: klik kanan shortcut Exam Browser → Properties → salin isi kolom *Target*.
+- **Cari otomatis** (aktif bawaan): jika semua lokasi tidak ada di sebuah komputer, agen mencari sendiri lewat registri, shortcut di Desktop/Start Menu, Program Files, folder pengguna, dan drive lain (D:, E:). Hasilnya diingat agar tidak mencari ulang.
 - **Nama proses**: lihat di Task Manager → tab Details (boleh pakai `*`, pisahkan dengan koma).
 
-Lokasi file harus sama di semua komputer.
+**Jika ada komputer yang lokasi Exam Browser-nya berbeda:**
+
+1. Lihat kolom **Lokasi Exam** di menu **Endpoint**: *Siap*, *Siap · otomatis* (ditemukan lewat pencarian), atau **Tidak ditemukan**. Dashboard juga menampilkan peringatan berisi daftar komputer yang bermasalah.
+2. Centang komputer tersebut → **Atur Endpoint → Atur lokasi Exam Browser…**, isi lokasi file .exe di komputer itu, lalu **Simpan**. Bisa juga lewat klik nama komputer → *Lokasi Exam Browser khusus komputer ini*.
+3. Agen memeriksa ulang dalam beberapa detik dan statusnya berubah menjadi **Siap**.
+
+Urutan yang dicoba agen: lokasi khusus komputer itu → daftar lokasi umum → pencarian otomatis. Lokasi khusus disimpan di kolom *Lokasi Exam Khusus* pada sheet `Endpoint`.
 
 ---
 
@@ -140,7 +147,7 @@ Demi keamanan, panel hanya bisa menjalankan skrip di atas (tidak ada skrip bebas
 
 - **Frontend**: edit file di repo ini, GitHub Pages memperbarui otomatis.
 - **Backend**: tempel kode baru di Apps Script, simpan, lalu **Terapkan → Kelola deployment → ikon pensil → Versi baru → Terapkan**. URL tetap sama, agen tidak perlu dipasang ulang.
-- **Agen**: setelah backend diperbarui, jalankan skrip **#Perbarui Agen** ke semua endpoint.
+- **Agen**: setelah backend diperbarui, jalankan skrip **#Perbarui Agen** ke semua endpoint. Kolom *Lokasi Exam* menampilkan **Perbarui agen** untuk komputer yang agennya masih versi lama (agen lama hanya memakai lokasi pertama).
 - Jika mengubah file di `agent/`, buat ulang `apps-script/Agen.gs` dengan `python3 tools/make_agen.py`.
 
 ## Mencopot agen

@@ -17,10 +17,10 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.1.0';
 
 var SHEETS = {
-  EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online'] },
+  EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
   AUTO: { name: 'Otomasi',  head: ['ID', 'Skrip', 'Aksi', 'Parameter', 'Jumlah Target', 'Jadwal', 'Batas', 'Dibuat', 'Baris Hasil', 'Status'] },
   RES:  { name: 'Hasil',    head: ['Kunci', 'ID Otomasi', 'Endpoint', 'Status', 'Keterangan', 'Diperbarui'] }
 };
@@ -48,6 +48,7 @@ var DEFAULT_SETTINGS = {
   examPath: 'C:\\Program Files\\SafeExamBrowser\\Application\\SafeExamBrowser.exe',
   examArgs: '',
   examProc: 'SafeExamBrowser*',
+  examAuto: true,
   groups: [NEW_GROUP],
   defaultGroup: NEW_GROUP
 };
@@ -70,6 +71,7 @@ var DEFAULT_LAYAR = {
  * ------------------------------------------------------------ */
 function setup() {
   sheet_(SHEETS.EP); sheet_(SHEETS.AUTO); sheet_(SHEETS.RES);
+  ensureEpHeader_();
   getKey_();
   if (!props_().getProperty('settings')) setJson_('settings', DEFAULT_SETTINGS);
   if (!props_().getProperty('layar')) setJson_('layar', DEFAULT_LAYAR);
@@ -193,6 +195,7 @@ function handleApi_(req) {
     case 'saveLayar': return saveLayar_(d);
     case 'moveEndpoints': return moveEndpoints_(d.ids, d.group);
     case 'setComment': return setComment_(d.id, d.comment);
+    case 'setExamPath': return setExamPath_(d.ids, d.path);
     case 'deleteEndpoints': return deleteEndpoints_(d.ids);
     case 'createGroup': return createGroup_(d.name);
     case 'renameGroup': return renameGroup_(d.from, d.to);
@@ -283,7 +286,10 @@ function agentCheckin_(b) {
   var now = Date.now();
   var s = settings_();
   var c = cache_();
-  c.put('hb_' + id, JSON.stringify({ t: now, user: str_(b.user, 120), exam: !!b.exam }), 21600);
+  c.put('hb_' + id, JSON.stringify({
+    t: now, user: str_(b.user, 120), exam: !!b.exam,
+    ep: str_(b.exp, 260), eok: !!b.eok, ecfg: !!b.ecfg, ver: str_(b.ver, 20)
+  }), 21600);
   var ep = ensureEndpoint_(id, b, s);
 
   // catat "terakhir online" ke sheet maksimal tiap 5 menit
@@ -305,11 +311,30 @@ function agentCheckin_(b) {
     ok: true,
     now: Date.now(),
     interval: s.interval,
-    cfg: { examPath: s.examPath, examArgs: s.examArgs, examProc: s.examProc },
+    cfg: examCfg_(s, ep, b.ver),
     jobs: q.filter(function (j) { return j.dl >= now; }).map(function (j) {
       return { id: j.id, a: j.a, p: j.p || {}, at: j.at, dl: j.dl };
     })
   };
+}
+
+/** Lokasi Exam Browser untuk satu komputer: lokasi khusus (jika ada) lalu lokasi umum. */
+function examCfg_(s, ep, ver) {
+  var paths = String((ep && ep.examOverride) || '').trim();
+  paths = paths ? paths + '\n' + String(s.examPath || '') : String(s.examPath || '');
+  if (verLt_(ver, '1.1.0')) {
+    // agen lama hanya mengerti satu lokasi
+    paths = paths.split(/\r?\n|\|/).map(function (x) { return x.trim(); }).filter(Boolean)[0] || '';
+  }
+  return { examPath: paths, examArgs: s.examArgs, examProc: s.examProc, examAuto: s.examAuto !== false };
+}
+
+function verLt_(a, b) {
+  var x = String(a || '0').split('.').map(Number), y = String(b).split('.').map(Number);
+  for (var i = 0; i < 3; i++) {
+    if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0);
+  }
+  return false;
 }
 
 function ensureEndpoint_(id, b, s) {
@@ -333,7 +358,7 @@ function ensureEndpoint_(id, b, s) {
     var sh = sheet_(SHEETS.EP);
     if (!ep) {
       var group = str_(b.grp, 60) || s.defaultGroup || NEW_GROUP;
-      sh.appendRow([id, id, group, '', info.user, info.ip, info.mac, info.bc, info.os, info.ver, new Date(), new Date()]);
+      sh.appendRow([id, id, group, '', info.user, info.ip, info.mac, info.bc, info.os, info.ver, new Date(), new Date(), '']);
       var s2 = settings_();
       if (s2.groups.indexOf(group) < 0) { s2.groups.push(group); setJson_('settings', s2); }
     } else {
@@ -640,7 +665,11 @@ function endpointsView_() {
       user: online ? (h.user || '') : e.user, loggedIn: online && !!h.user,
       ip: e.ip, mac: e.mac, os: e.os, ver: e.ver,
       online: online, exam: online && !!h.exam,
-      seen: h ? h.t : e.seen, reg: e.reg
+      seen: h ? h.t : e.seen, reg: e.reg,
+      examOverride: e.examOverride,
+      examPath: h ? (h.ep || '') : '',
+      examOk: online && h.ecfg ? !!h.eok : null,
+      agentOld: verLt_((h && h.ver) || e.ver, '1.1.0')
     };
   });
 }
@@ -696,6 +725,29 @@ function setComment_(id, comment) {
     }
   });
   return { ok: true };
+}
+
+function setExamPath_(ids, path) {
+  path = str_(path, 1000).split(/\r?\n/).map(function (x) { return x.trim().replace(/^"|"$/g, ''); }).filter(Boolean).join('\n');
+  var set = {};
+  [].concat(ids || []).forEach(function (i) { set[normId_(i)] = 1; });
+  ensureEpHeader_();
+  withEpSheet_(function (sh, values) {
+    if (!values.length) return;
+    sh.getRange(2, 13, values.length, 1).setValues(values.map(function (r) {
+      return [set[String(r[0])] ? path : (r[12] || '')];
+    }));
+  });
+  return { ok: true };
+}
+
+function ensureEpHeader_() {
+  var sh = sheet_(SHEETS.EP);
+  var n = SHEETS.EP.head.length;
+  var h = sh.getRange(1, 1, 1, n).getValues()[0];
+  if (String(h[n - 1]) !== SHEETS.EP.head[n - 1]) {
+    sh.getRange(1, 1, 1, n).setValues([SHEETS.EP.head]).setFontWeight('bold').setBackground('#1b2b8f').setFontColor('#ffffff');
+  }
 }
 
 function deleteEndpoints_(ids) {
@@ -757,7 +809,8 @@ function saveSettings_(d) {
   if (d.tz && ['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura'].indexOf(d.tz) >= 0) s.tz = d.tz;
   if (d.interval != null) s.interval = Math.min(120, Math.max(5, Math.round(Number(d.interval) || 10)));
   if (d.examPreset != null) s.examPreset = str_(d.examPreset, 20);
-  if (d.examPath != null) s.examPath = str_(d.examPath, 260).trim();
+  if (d.examPath != null) s.examPath = str_(d.examPath, 1500).trim();
+  if (d.examAuto != null) s.examAuto = !!d.examAuto;
   if (d.examArgs != null) s.examArgs = str_(d.examArgs, 500).trim();
   if (d.examProc != null) s.examProc = str_(d.examProc, 120).trim();
   if (d.defaultGroup != null && str_(d.defaultGroup, 60).trim()) s.defaultGroup = str_(d.defaultGroup, 60).trim();
@@ -877,7 +930,8 @@ function epMap_() {
       map[String(r[0])] = {
         row: i + 2, id: String(r[0]), name: String(r[1] || r[0]), group: String(r[2] || NEW_GROUP),
         comment: String(r[3] || ''), user: String(r[4] || ''), ip: String(r[5] || ''), mac: String(r[6] || ''),
-        bc: String(r[7] || ''), os: String(r[8] || ''), ver: String(r[9] || ''), reg: ms_(r[10]), seen: ms_(r[11])
+        bc: String(r[7] || ''), os: String(r[8] || ''), ver: String(r[9] || ''), reg: ms_(r[10]), seen: ms_(r[11]),
+        examOverride: String(r[12] || '')
       };
     });
   }

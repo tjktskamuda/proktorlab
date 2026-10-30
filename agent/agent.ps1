@@ -6,7 +6,7 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.0.0'
+$AgentVersion = '1.1.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -46,6 +46,12 @@ $Offset    = 0.0
 $ExamPath  = ''
 $ExamArgs  = ''
 $ExamProc  = ''
+$ExamAuto  = $true
+$ExamFound = ''
+$ExamUsed  = ''
+$ExamTried = @()
+$ExamSearchAt = [datetime]::MinValue
+$ExamSig   = ''
 $Info      = $null
 $InfoAt    = [datetime]::MinValue
 $Jobs      = @{}
@@ -59,7 +65,7 @@ $Restart   = $false
 
 function Save-State {
   try {
-    $o = @{ done = @($Done | Select-Object -Last 300); results = @($Results) }
+    $o = @{ done = @($Done | Select-Object -Last 300); results = @($Results); examFound = $script:ExamFound }
     [IO.File]::WriteAllText($StateFile, (ConvertTo-Json -InputObject $o -Depth 5 -Compress), (New-Object Text.UTF8Encoding($false)))
   } catch { Write-Log ('Gagal simpan state: ' + $_.Exception.Message) }
 }
@@ -69,6 +75,7 @@ function Load-State {
   try {
     $s = Get-Content $StateFile -Raw | ConvertFrom-Json
     foreach ($d in @($s.done)) { if ($d) { [void]$Done.Add([string]$d) } }
+    if ($s.examFound) { $script:ExamFound = [string]$s.examFound }
     foreach ($r in @($s.results)) {
       if ($r -and $r.id) { [void]$Results.Add(@{ id = [string]$r.id; s = [string]$r.s; o = [string]$r.o; t = $r.t }) }
     }
@@ -148,10 +155,130 @@ function Get-ExamNames {
   $names = @()
   if ($script:ExamProc) {
     $names = @($script:ExamProc.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-  } elseif ($script:ExamPath) {
-    $names = @([IO.Path]::GetFileNameWithoutExtension($script:ExamPath))
+  } else {
+    $p = $script:ExamUsed
+    if (-not $p) { $p = @(Get-ExamCandidates)[0] }
+    if ($p) { $names = @((Get-Leaf $p) -replace '\.exe$', '') }
   }
   return $names
+}
+
+# ---------- lokasi Exam Browser ----------
+# Panel boleh mengisi beberapa lokasi (satu per baris). Agen mencoba berurutan;
+# jika tidak ada satu pun, agen mencari sendiri di komputer ini (bila diizinkan).
+function Get-Leaf([string]$path) { return ([string]$path -split '[\\/]')[-1] }
+
+function Get-ExamCandidates {
+  $list = @()
+  foreach ($c in ([string]$script:ExamPath -split "\r?\n|\|")) {
+    $c = $c.Trim().Trim('"').Trim()
+    if ($c) { $list += [Environment]::ExpandEnvironmentVariables($c) }
+  }
+  return $list
+}
+
+function Get-ExamFileNames {
+  $names = @()
+  foreach ($c in (Get-ExamCandidates)) {
+    $leaf = Get-Leaf $c
+    if ($leaf -and $leaf -like '*.exe' -and $names -notcontains $leaf) { $names += $leaf }
+  }
+  if ($names.Count -eq 0 -and $script:ExamProc) {
+    foreach ($n in $script:ExamProc.Split(',')) {
+      $n = $n.Trim()
+      if ($n -and $n -notmatch '[\*\?]') { $names += ($n + '.exe') }
+    }
+  }
+  return $names
+}
+
+function Get-UserDirs([string]$sub) {
+  $out = @()
+  try {
+    if (-not $env:SystemDrive) { return $out }
+    Get-ChildItem -Path ($env:SystemDrive + '\Users') -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+      $d = Join-Path $_.FullName $sub
+      if (Test-Path -LiteralPath $d) { $out += $d }
+    }
+  } catch {}
+  return $out
+}
+
+function Find-ExamExe {
+  $names = @(Get-ExamFileNames)
+  if ($names.Count -eq 0) { return '' }
+  # 1. registri App Paths
+  foreach ($n in $names) {
+    foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths')) {
+      try {
+        $v = (Get-ItemProperty -Path ($root + '\' + $n) -ErrorAction Stop).'(default)'
+        if ($v) { $v = $v.Trim('"'); if (Test-Path -LiteralPath $v -PathType Leaf) { return $v } }
+      } catch {}
+    }
+  }
+  # 2. shortcut di Desktop dan Start Menu
+  $lnkDirs = @()
+  if ($env:PUBLIC) { $lnkDirs += (Join-Path $env:PUBLIC 'Desktop') }
+  if ($env:ProgramData) { $lnkDirs += (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs') }
+  $lnkDirs += Get-UserDirs 'Desktop'
+  $lnkDirs += Get-UserDirs 'OneDrive\Desktop'
+  $lnkDirs += Get-UserDirs 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs'
+  try {
+    $sh = New-Object -ComObject WScript.Shell
+    foreach ($d in $lnkDirs) {
+      if (-not (Test-Path -LiteralPath $d)) { continue }
+      foreach ($l in @(Get-ChildItem -LiteralPath $d -Filter '*.lnk' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue)) {
+        try {
+          $t = [string]$sh.CreateShortcut($l.FullName).TargetPath
+          if ($t -and ($names -contains (Get-Leaf $t)) -and (Test-Path -LiteralPath $t -PathType Leaf)) { return $t }
+        } catch {}
+      }
+    }
+  } catch {}
+  # 3. folder instalasi yang umum
+  $roots = @()
+  foreach ($r in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramData)) { if ($r) { $roots += ,@($r, 4) } }
+  foreach ($r in (Get-UserDirs 'AppData\Local\Programs')) { $roots += ,@($r, 3) }
+  foreach ($r in (Get-UserDirs 'AppData\Local')) { $roots += ,@($r, 2) }
+  foreach ($r in (Get-UserDirs 'Desktop')) { $roots += ,@($r, 3) }
+  foreach ($r in (Get-UserDirs 'Downloads')) { $roots += ,@($r, 2) }
+  $roots += ,@(($env:SystemDrive + '\'), 1)
+  try {
+    Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue | ForEach-Object {
+      if ($_.DeviceID -ne $env:SystemDrive) { $roots += ,@(($_.DeviceID + '\'), 2) }
+    }
+  } catch {}
+  foreach ($pair in $roots) {
+    foreach ($n in $names) {
+      $f = Get-ChildItem -LiteralPath $pair[0] -Filter $n -Recurse -Depth $pair[1] -File -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($f) { return $f.FullName }
+    }
+  }
+  return ''
+}
+
+function Resolve-ExamPath([switch]$Force) {
+  $cands = @(Get-ExamCandidates)
+  $script:ExamTried = $cands
+  foreach ($c in $cands) {
+    if (Test-Path -LiteralPath $c -PathType Leaf) { $script:ExamUsed = $c; return $c }
+  }
+  if (-not $script:ExamAuto) { $script:ExamUsed = ''; return '' }
+  $names = @(Get-ExamFileNames)
+  if ($script:ExamFound -and ($names -contains (Get-Leaf $script:ExamFound)) -and (Test-Path -LiteralPath $script:ExamFound -PathType Leaf)) {
+    $script:ExamUsed = $script:ExamFound; return $script:ExamFound
+  }
+  if (-not $Force -and ((Get-Date) - $script:ExamSearchAt).TotalMinutes -lt 10) { $script:ExamUsed = ''; return '' }
+  $script:ExamSearchAt = Get-Date
+  $t0 = Get-Date
+  $found = Find-ExamExe
+  $secs = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
+  if ($found) { Write-Log ('Exam Browser ditemukan otomatis: ' + $found + ' (' + $secs + ' dtk)') }
+  else { Write-Log ('Exam Browser tidak ditemukan (pencarian ' + $secs + ' dtk).') }
+  $script:ExamFound = $found
+  Save-State
+  $script:ExamUsed = $found
+  return $found
 }
 
 function Get-ExamProcesses {
@@ -240,6 +367,7 @@ function Invoke-Checkin {
   if (((Get-Date) - $script:InfoAt).TotalSeconds -gt 60 -or -not $script:Info) {
     $script:Info = Get-Info
     $script:InfoAt = Get-Date
+    if ($script:ExamSig) { [void](Resolve-ExamPath) }
   }
   $sendResults = @($Results.ToArray())
   $sendAcks = @($Acks.ToArray())
@@ -249,6 +377,7 @@ function Invoke-Checkin {
     user = (Get-LoggedUser); exam = $examRunning
     ip = $script:Info.ip; mac = $script:Info.mac; bc = $script:Info.bc; os = $script:Info.os
     results = $sendResults; acks = $sendAcks
+    exp = $script:ExamUsed; eok = [bool]$script:ExamUsed; ecfg = [bool]$script:ExamSig
   }
   $t0 = Get-NowMs
   $res = Invoke-Api $body
@@ -266,9 +395,18 @@ function Invoke-Checkin {
   $script:Offset = [double]$res.now - (($t0 + $t1) / 2)
   if ($res.interval) { $script:Interval = [math]::Max(3, [int]$res.interval) }
   if ($res.cfg) {
-    $script:ExamPath = [Environment]::ExpandEnvironmentVariables([string]$res.cfg.examPath)
+    $script:ExamPath = [string]$res.cfg.examPath
     $script:ExamArgs = [string]$res.cfg.examArgs
     $script:ExamProc = [string]$res.cfg.examProc
+    $script:ExamAuto = ($res.cfg.examAuto -ne $false)
+    $sig = $script:ExamPath + '|' + $script:ExamProc + '|' + $script:ExamAuto
+    if ($sig -ne $script:ExamSig) {
+      # pengaturan lokasi berubah: cek ulang segera pada laporan berikutnya
+      $script:ExamSig = $sig
+      $script:ExamSearchAt = [datetime]::MinValue
+      [void](Resolve-ExamPath)
+      $script:NextCheck = Get-Date
+    }
   }
 
   # sinkronkan antrean perintah
@@ -301,14 +439,22 @@ function Invoke-Job($j) {
   try {
     switch ([string]$j.a) {
       'run_exam' {
-        if (-not $script:ExamPath) { throw 'Path Exam Browser belum diatur di panel (Pustaka Skrip).' }
-        if (-not (Test-Path -LiteralPath $script:ExamPath)) { throw ('File tidak ditemukan: ' + $script:ExamPath) }
+        if (-not $script:ExamPath -and -not $script:ExamProc) { throw 'Lokasi Exam Browser belum diatur di panel (Pustaka Skrip).' }
         $running = @(Get-ExamProcesses)
         if ($running.Count -gt 0) { Add-Result $jid 'ok' 'Exam Browser sudah berjalan.'; return }
-        $cmd = '"' + $script:ExamPath + '"'
+        $exe = Resolve-ExamPath -Force
+        $script:NextCheck = Get-Date
+        if (-not $exe) {
+          $msg = 'Exam Browser tidak ditemukan di komputer ini.'
+          if ($script:ExamTried.Count) { $msg += ' Sudah dicek: ' + ($script:ExamTried -join '; ') + '.' }
+          if ($script:ExamAuto) { $msg += ' Pencarian otomatis juga tidak menemukan.' }
+          $msg += ' Atur lokasi khusus komputer ini di panel (menu Endpoint).'
+          throw $msg
+        }
+        $cmd = '"' + $exe + '"'
         if ($script:ExamArgs) { $cmd += ' ' + $script:ExamArgs }
         $vbs = 'Set sh = CreateObject("WScript.Shell")' + "`r`n"
-        $vbs += 'sh.CurrentDirectory = ' + (ConvertTo-Vbs ([IO.Path]::GetDirectoryName($script:ExamPath))) + "`r`n"
+        $vbs += 'sh.CurrentDirectory = ' + (ConvertTo-Vbs ([IO.Path]::GetDirectoryName($exe))) + "`r`n"
         $vbs += 'sh.Run ' + (ConvertTo-Vbs $cmd) + ', 3, False'
         $u = Invoke-AsUser $vbs 'exam'
         $ok = $false
@@ -316,7 +462,7 @@ function Invoke-Job($j) {
           Start-Sleep -Milliseconds 500
           if (@(Get-ExamProcesses).Count -gt 0) { $ok = $true; break }
         }
-        if ($ok) { Add-Result $jid 'ok' ('Exam Browser dibuka untuk ' + $u + '.') }
+        if ($ok) { Add-Result $jid 'ok' ('Exam Browser dibuka untuk ' + $u + ' (' + $exe + ').') }
         else { Add-Result $jid 'ok' ('Perintah buka dikirim ke ' + $u + ' (proses belum terdeteksi, cek nama proses di panel).') }
       }
       'close_exam' {
