@@ -116,6 +116,12 @@ Menu **Pustaka Skrip → Konfigurasi Exam Browser**. Pilih preset (Safe Exam Bro
 
   Format: `Judul jendela > Tombol`, `*` = jendela Exam Browser mana saja, `/` memisahkan pilihan tombol, baris diawali `#` diabaikan. Setiap tombol diklik sekali per jendela. Hapus baris *Persetujuan* jika sekolah ingin siswa menyetujui perekaman sendiri. Log klik ada di `%TEMP%\ProktorLab-autopilot.log` pada akun siswa.
 
+**Saat Exam Browser ditutup** (#Close ExamBrowser):
+
+- Agen menekan **shortcut keluar** Exam Browser di komputer siswa, sama seperti menutup manual dengan keyboard. Bawaan: `Ctrl+C+B+L`, lalu `Ctrl+C+B` (satu per baris, dicoba berurutan). Konfirmasi Yes/OK yang muncul diklik otomatis.
+- Jika Exam Browser tetap terbuka, prosesnya dihentikan paksa, lalu Explorer (taskbar) dinyalakan lagi bila ikut mati.
+- Agen **mempelajari sendiri** nama proses yang dibuat Exam Browser (misalnya `runningexam.exe` pada Exambrowser ANBK) agar status *Berjalan* dan #Close ExamBrowser tetap mengenalinya. Tombol **Pakai contoh Exambrowser ANBK** juga menambahkan `runningexam*,exambro*` ke *Nama proses*.
+
 **Jika ada komputer yang lokasi Exam Browser-nya berbeda:**
 
 1. Lihat kolom **Lokasi Exam** di menu **Endpoint**: *Siap*, *Siap · otomatis* (ditemukan lewat pencarian), atau **Tidak ditemukan**. Dashboard juga menampilkan peringatan berisi daftar komputer yang bermasalah.

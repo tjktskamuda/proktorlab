@@ -17,7 +17,7 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.2.0';
+var APP_VERSION = '1.3.0';
 
 var SHEETS = {
   EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
@@ -60,6 +60,7 @@ var DEFAULT_SETTINGS = {
   examElevate: false,
   examClick: true,
   examRules: DEFAULT_RULES,
+  examCloseKeys: 'Ctrl+C+B+L\nCtrl+C+B',
   groups: [NEW_GROUP],
   defaultGroup: NEW_GROUP
 };
@@ -340,7 +341,8 @@ function examCfg_(s, ep, ver) {
   }
   return {
     examPath: paths, examArgs: s.examArgs, examProc: s.examProc, examAuto: s.examAuto !== false,
-    examElevate: !!s.examElevate, examClick: s.examClick !== false, examRules: String(s.examRules || '')
+    examElevate: !!s.examElevate, examClick: s.examClick !== false, examRules: String(s.examRules || ''),
+    examCloseKeys: String(s.examCloseKeys || '')
   };
 }
 
@@ -829,6 +831,7 @@ function saveSettings_(d) {
   if (d.examElevate != null) s.examElevate = !!d.examElevate;
   if (d.examClick != null) s.examClick = !!d.examClick;
   if (d.examRules != null) s.examRules = str_(d.examRules, 2000).trim();
+  if (d.examCloseKeys != null) s.examCloseKeys = str_(d.examCloseKeys, 300).trim();
   if (d.examArgs != null) s.examArgs = str_(d.examArgs, 500).trim();
   if (d.examProc != null) s.examProc = str_(d.examProc, 120).trim();
   if (d.defaultGroup != null && str_(d.defaultGroup, 60).trim()) s.defaultGroup = str_(d.defaultGroup, 60).trim();

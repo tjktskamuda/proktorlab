@@ -6,8 +6,8 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.2.0'
-$AutopilotVersion = '1.2.0'
+$AgentVersion = '1.3.0'
+$AutopilotVersion = '1.3.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -57,6 +57,9 @@ $ExamElevate = $false
 $ExamClick = $false
 $ExamRules = ''
 $AutopilotFile = Join-Path $Base 'autopilot.ps1'
+$ExamCloseKeys = ''
+$ExamLearned = New-Object System.Collections.ArrayList
+$LearnAt = [datetime]::MinValue
 $Info      = $null
 $InfoAt    = [datetime]::MinValue
 $Jobs      = @{}
@@ -70,7 +73,7 @@ $Restart   = $false
 
 function Save-State {
   try {
-    $o = @{ done = @($Done | Select-Object -Last 300); results = @($Results); examFound = $script:ExamFound }
+    $o = @{ done = @($Done | Select-Object -Last 300); results = @($Results); examFound = $script:ExamFound; examLearned = @($ExamLearned) }
     [IO.File]::WriteAllText($StateFile, (ConvertTo-Json -InputObject $o -Depth 5 -Compress), (New-Object Text.UTF8Encoding($false)))
   } catch { Write-Log ('Gagal simpan state: ' + $_.Exception.Message) }
 }
@@ -81,6 +84,7 @@ function Load-State {
     $s = Get-Content $StateFile -Raw | ConvertFrom-Json
     foreach ($d in @($s.done)) { if ($d) { [void]$Done.Add([string]$d) } }
     if ($s.examFound) { $script:ExamFound = [string]$s.examFound }
+    foreach ($n in @($s.examLearned)) { if ($n -and -not ($ExamLearned -contains [string]$n)) { [void]$ExamLearned.Add([string]$n) } }
     foreach ($r in @($s.results)) {
       if ($r -and $r.id) { [void]$Results.Add(@{ id = [string]$r.id; s = [string]$r.s; o = [string]$r.o; t = $r.t }) }
     }
@@ -165,7 +169,57 @@ function Get-ExamNames {
     if (-not $p) { $p = @(Get-ExamCandidates)[0] }
     if ($p) { $names = @((Get-Leaf $p) -replace '\.exe$', '') }
   }
+  foreach ($n in $ExamLearned) { if ($names -notcontains $n) { $names += $n } }
   return $names
+}
+
+# Pelajari nama proses yang dibuat Exam Browser (misalnya runningexam.exe pada
+# Exambrowser ANBK) supaya status dan #Close ExamBrowser tetap mengenalinya
+# walaupun belum ditulis di "Nama proses" pada panel.
+$NoLearn = @('conhost', 'powershell', 'pwsh', 'wscript', 'cscript', 'cmd', 'werfault', 'explorer', 'dllhost', 'svchost', 'consent', 'msedgewebview2', 'searchhost', 'taskmgr')
+function Update-ExamLearned {
+  $exe = $script:ExamUsed
+  if (-not $exe) { return }
+  try {
+    $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath -ErrorAction Stop)
+  } catch { return }
+  $set = @{}
+  foreach ($p in $all) { if ([string]$p.ExecutablePath -and ([string]$p.ExecutablePath -eq $exe)) { $set[[int]$p.ProcessId] = $true } }
+  if ($set.Count -eq 0) { return }
+  $changed = $true
+  while ($changed) {
+    $changed = $false
+    foreach ($p in $all) {
+      $id = [int]$p.ProcessId
+      if (-not $set.ContainsKey($id) -and $set.ContainsKey([int]$p.ParentProcessId)) { $set[$id] = $true; $changed = $true }
+    }
+  }
+  $new = $false
+  foreach ($p in $all) {
+    if (-not $set.ContainsKey([int]$p.ProcessId)) { continue }
+    $n = ([string]$p.Name) -replace '\.exe$', ''
+    if (-not $n -or ($NoLearn -contains $n.ToLower()) -or ($ExamLearned -contains $n)) { continue }
+    if ($ExamLearned.Count -ge 12) { break }
+    [void]$ExamLearned.Add($n)
+    $new = $true
+    Write-Log ('Nama proses Exam Browser dipelajari: ' + $n)
+  }
+  if ($new) { Save-State }
+}
+
+# Explorer (taskbar & desktop) sering dimatikan Exam Browser selama ujian;
+# setelah ditutup paksa, nyalakan lagi agar layar siswa tidak hitam.
+function Start-ExplorerIfMissing([string]$user) {
+  if (-not $user) { return $false }
+  try {
+    foreach ($p in @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" -ErrorAction Stop)) {
+      $o = Invoke-CimMethod -InputObject $p -MethodName GetOwner
+      if (($o.Domain + '\' + $o.User) -eq $user) { return $false }
+    }
+  } catch { return $false }
+  $vbs = 'CreateObject("WScript.Shell").Run "explorer.exe", 1, False'
+  [void](Invoke-AsUser $vbs 'explorer')
+  return $true
 }
 
 # ---------- lokasi Exam Browser ----------
@@ -400,7 +454,7 @@ function Invoke-Checkin {
   if (((Get-Date) - $script:InfoAt).TotalSeconds -gt 60 -or -not $script:Info) {
     $script:Info = Get-Info
     $script:InfoAt = Get-Date
-    if ($script:ExamSig) { [void](Resolve-ExamPath) }
+    if ($script:ExamSig) { [void](Resolve-ExamPath); Update-ExamLearned }
   }
   $sendResults = @($Results.ToArray())
   $sendAcks = @($Acks.ToArray())
@@ -435,9 +489,11 @@ function Invoke-Checkin {
     $script:ExamElevate = ($res.cfg.examElevate -eq $true)
     $script:ExamClick = ($res.cfg.examClick -eq $true)
     $script:ExamRules = [string]$res.cfg.examRules
+    $script:ExamCloseKeys = [string]$res.cfg.examCloseKeys
     $sig = $script:ExamPath + '|' + $script:ExamProc + '|' + $script:ExamAuto
     if ($sig -ne $script:ExamSig) {
       # pengaturan lokasi berubah: cek ulang segera pada laporan berikutnya
+      if ($script:ExamSig -and $ExamLearned.Count) { $ExamLearned.Clear(); Save-State }
       $script:ExamSig = $sig
       $script:ExamSearchAt = [datetime]::MinValue
       [void](Resolve-ExamPath)
@@ -522,25 +578,60 @@ function Invoke-Job($j) {
         $ok = $false
         for ($w = 0; $w -lt 16; $w++) {
           Start-Sleep -Milliseconds 500
+          if ($w % 4 -eq 3) { Update-ExamLearned }
           if (@(Get-ExamProcesses).Count -gt 0) { $ok = $true; break }
         }
         if ($ok) { Add-Result $jid 'ok' ('Exam Browser dibuka untuk ' + $u + ' (' + $exe + ').' + $note) }
         else { Add-Result $jid 'ok' ('Perintah buka dikirim ke ' + $u + ' (proses belum terdeteksi, cek nama proses di panel).' + $note) }
       }
       'close_exam' {
+        Update-ExamLearned
+        $names = @(Get-ExamNames)
         $procs = @(Get-ExamProcesses)
-        if ($procs.Count -eq 0) { Add-Result $jid 'ok' 'Tidak ada Exam Browser yang berjalan.'; return }
-        $procs | Stop-Process -Force -ErrorAction SilentlyContinue
-        $left = 0
-        for ($w = 0; $w -lt 8; $w++) {
-          Start-Sleep -Milliseconds 500
-          $rest = @(Get-ExamProcesses)
-          $left = $rest.Count
-          if ($left -eq 0) { break }
-          $rest | Stop-Process -Force -ErrorAction SilentlyContinue
+        if ($procs.Count -eq 0) {
+          Add-Result $jid 'ok' ('Tidak ada Exam Browser yang berjalan (dicari: ' + ($names -join ', ') + '). Jika sebenarnya terbuka, isi Nama proses di Pustaka Skrip sesuai Task Manager > Details.')
+          return
         }
-        if ($left -eq 0) { Add-Result $jid 'ok' ('Exam Browser ditutup (' + $procs.Count + ' proses).') }
-        else { Add-Result $jid 'err' ('Masih ada ' + $left + ' proses yang belum tertutup.') }
+        $user = Get-LoggedUser
+        $how = ''
+        # 1) cara resmi: tekan shortcut keluar Exam Browser (misalnya Ctrl+C+B+L) di layar siswa
+        if ($script:ExamCloseKeys.Trim() -and $user) {
+          try {
+            Update-Autopilot
+            $sysRoot = $env:SystemRoot
+            if (-not $sysRoot) { $sysRoot = 'C:\Windows' }
+            $ps = $sysRoot + '\System32\WindowsPowerShell\v1.0\powershell.exe'
+            $cmd = '"' + $ps + '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $AutopilotFile + '" -Mode close' +
+              ' -KeysB64 ' + (ConvertTo-B64 $script:ExamCloseKeys) + ' -RulesB64 ' + (ConvertTo-B64 '* > Yes/Ya/OK/Oke') +
+              ' -NamesB64 ' + (ConvertTo-B64 ($names -join ',')) + ' -Timeout 40'
+            $vbs = 'CreateObject("WScript.Shell").Run ' + (ConvertTo-Vbs $cmd) + ', 0, False'
+            [void](Invoke-AsUser $vbs 'close' -Elevated)
+            for ($w = 0; $w -lt 40; $w++) {
+              Start-Sleep -Milliseconds 500
+              if (@(Get-ExamProcesses).Count -eq 0) { $how = 'shortcut ' + (($script:ExamCloseKeys -split "\r?\n" | Where-Object { $_.Trim() }) -join ' / '); break }
+            }
+          } catch { Write-Log ('Shortcut keluar gagal: ' + $_.Exception.Message) }
+        }
+        # 2) cadangan: hentikan paksa proses
+        $left = 0
+        if (-not $how) {
+          $rest = @(Get-ExamProcesses)
+          for ($w = 0; $w -lt 8 -and $rest.Count -gt 0; $w++) {
+            $rest | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 500
+            $rest = @(Get-ExamProcesses)
+          }
+          $left = $rest.Count
+          if ($left -eq 0) { $how = 'dihentikan paksa' }
+        }
+        $extra = ''
+        if ($how) {
+          Start-Sleep -Seconds 2
+          try { if (Start-ExplorerIfMissing $user) { $extra = ' Explorer (taskbar) dinyalakan kembali.' } } catch {}
+          Add-Result $jid 'ok' ('Exam Browser ditutup (' + $how + ').' + $extra)
+        } else {
+          Add-Result $jid 'err' ('Masih ada ' + $left + ' proses Exam Browser yang belum tertutup.')
+        }
       }
       'wol' {
         $n = Send-Wol $p.macs
