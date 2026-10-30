@@ -103,6 +103,19 @@ Menu **Pustaka Skrip → Konfigurasi Exam Browser**. Pilih preset (Safe Exam Bro
 - **Cari otomatis** (aktif bawaan): jika semua lokasi tidak ada di sebuah komputer, agen mencari sendiri lewat registri, shortcut di Desktop/Start Menu, Program Files, folder pengguna, dan drive lain (D:, E:). Hasilnya diingat agar tidak mencari ulang.
 - **Nama proses**: lihat di Task Manager → tab Details (boleh pakai `*`, pisahkan dengan koma).
 
+**Saat Exam Browser dibuka** (bagian bawah formulir yang sama):
+
+- **Jalankan sebagai Administrator**: Exam Browser dibuka lewat Task Scheduler dengan hak tertinggi, sehingga jendela UAC *"Do you want to allow this app from an unknown publisher…"* (misalnya untuk `runningexam.exe` di Exambrowser ANBK) tidak muncul. Akun Windows siswa harus anggota grup Administrators. Jendela UAC sengaja dibuat Windows agar tidak bisa diklik oleh program apa pun, jadi inilah cara resmi melewatinya.
+- **Klik otomatis**: agen menjalankan `autopilot.ps1` di akun siswa yang memantau jendela milik Exam Browser dan mengklik tombolnya sesuai aturan, sampai aplikasi ujian terbuka. Aturan bawaan (Exambrowser ANBK):
+
+  ```
+  * > OK/Oke                      peringatan "Anda tidak memiliki akses internet… autoupdate"
+  Exambrowser Client > RUN        tombol RUN di jendela DARING
+  Persetujuan* > Yes/Ya           "Persetujuan Merekam Aktifitas Saat Ujian"
+  ```
+
+  Format: `Judul jendela > Tombol`, `*` = jendela Exam Browser mana saja, `/` memisahkan pilihan tombol, baris diawali `#` diabaikan. Setiap tombol diklik sekali per jendela. Hapus baris *Persetujuan* jika sekolah ingin siswa menyetujui perekaman sendiri. Log klik ada di `%TEMP%\ProktorLab-autopilot.log` pada akun siswa.
+
 **Jika ada komputer yang lokasi Exam Browser-nya berbeda:**
 
 1. Lihat kolom **Lokasi Exam** di menu **Endpoint**: *Siap*, *Siap · otomatis* (ditemukan lewat pencarian), atau **Tidak ditemukan**. Dashboard juga menampilkan peringatan berisi daftar komputer yang bermasalah.

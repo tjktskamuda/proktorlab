@@ -17,7 +17,7 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.1.0';
+var APP_VERSION = '1.2.0';
 
 var SHEETS = {
   EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
@@ -40,6 +40,14 @@ var ACTIONS = {
 
 var NEW_GROUP = 'Endpoint Baru';
 
+// Aturan klik otomatis bawaan (contoh untuk Exambrowser ANBK/Pusmendik).
+// Format: Judul jendela > Tombol1/Tombol2   (* = jendela Exam Browser apa saja)
+var DEFAULT_RULES = [
+  '* > OK/Oke',
+  'Exambrowser Client > RUN',
+  'Persetujuan* > Yes/Ya'
+].join('\n');
+
 var DEFAULT_SETTINGS = {
   school: 'SMKN 1 Murung Pudak',
   tz: 'Asia/Makassar',
@@ -49,6 +57,9 @@ var DEFAULT_SETTINGS = {
   examArgs: '',
   examProc: 'SafeExamBrowser*',
   examAuto: true,
+  examElevate: false,
+  examClick: true,
+  examRules: DEFAULT_RULES,
   groups: [NEW_GROUP],
   defaultGroup: NEW_GROUP
 };
@@ -127,6 +138,7 @@ function serveFile_(p) {
   var url = ScriptApp.getService().getUrl();
   var group = str_(p.g, 60);
   if (p.f === 'agent') return text(AGENT_PS1);
+  if (p.f === 'autopilot') return text(AUTOPILOT_PS1);
   if (p.f === 'install') return text(buildInstall_(url, key, group));
   if (p.f === 'uninstall') return text(UNINSTALL_PS1);
   if (p.f === 'bat') {
@@ -326,7 +338,10 @@ function examCfg_(s, ep, ver) {
     // agen lama hanya mengerti satu lokasi
     paths = paths.split(/\r?\n|\|/).map(function (x) { return x.trim(); }).filter(Boolean)[0] || '';
   }
-  return { examPath: paths, examArgs: s.examArgs, examProc: s.examProc, examAuto: s.examAuto !== false };
+  return {
+    examPath: paths, examArgs: s.examArgs, examProc: s.examProc, examAuto: s.examAuto !== false,
+    examElevate: !!s.examElevate, examClick: s.examClick !== false, examRules: String(s.examRules || '')
+  };
 }
 
 function verLt_(a, b) {
@@ -811,6 +826,9 @@ function saveSettings_(d) {
   if (d.examPreset != null) s.examPreset = str_(d.examPreset, 20);
   if (d.examPath != null) s.examPath = str_(d.examPath, 1500).trim();
   if (d.examAuto != null) s.examAuto = !!d.examAuto;
+  if (d.examElevate != null) s.examElevate = !!d.examElevate;
+  if (d.examClick != null) s.examClick = !!d.examClick;
+  if (d.examRules != null) s.examRules = str_(d.examRules, 2000).trim();
   if (d.examArgs != null) s.examArgs = str_(d.examArgs, 500).trim();
   if (d.examProc != null) s.examProc = str_(d.examProc, 120).trim();
   if (d.defaultGroup != null && str_(d.defaultGroup, 60).trim()) s.defaultGroup = str_(d.defaultGroup, 60).trim();

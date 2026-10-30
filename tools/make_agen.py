@@ -4,7 +4,8 @@ import json, pathlib, sys
 root = pathlib.Path(__file__).resolve().parent.parent
 parts = [("AGENT_PS1", "agent.ps1", "Kode agen yang berjalan di tiap komputer lab"),
          ("INSTALL_PS1", "install.ps1", "Pemasang agen (dipanggil lewat ?f=install)"),
-         ("UNINSTALL_PS1", "uninstall.ps1", "Penghapus agen (dipanggil lewat ?f=uninstall)")]
+         ("UNINSTALL_PS1", "uninstall.ps1", "Penghapus agen (dipanggil lewat ?f=uninstall)"),
+         ("AUTOPILOT_PS1", "autopilot.ps1", "Klik otomatis jendela pembuka Exam Browser (dipanggil lewat ?f=autopilot)")]
 
 out = ["/**",
        " * Agen.gs - kode PowerShell agen ProktorLab.",

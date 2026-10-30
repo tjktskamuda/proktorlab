@@ -6,7 +6,8 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.1.0'
+$AgentVersion = '1.2.0'
+$AutopilotVersion = '1.2.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -52,6 +53,10 @@ $ExamUsed  = ''
 $ExamTried = @()
 $ExamSearchAt = [datetime]::MinValue
 $ExamSig   = ''
+$ExamElevate = $false
+$ExamClick = $false
+$ExamRules = ''
+$AutopilotFile = Join-Path $Base 'autopilot.ps1'
 $Info      = $null
 $InfoAt    = [datetime]::MinValue
 $Jobs      = @{}
@@ -295,18 +300,46 @@ function ConvertTo-Vbs([string]$s) {
 
 # Menjalankan skrip VBS kecil di sesi pengguna yang sedang login
 # (agen berjalan sebagai SYSTEM sehingga tidak punya layar sendiri).
-function Invoke-AsUser([string]$vbsBody, [string]$tag) {
+function Invoke-AsUser([string]$vbsBody, [string]$tag, [switch]$Elevated) {
   $user = Get-LoggedUser
   if (-not $user) { throw 'Tidak ada pengguna yang sedang login di komputer ini.' }
   $name = 'PL-' + $tag + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
   $file = Join-Path $RunDir ($name + '.vbs')
   [IO.File]::WriteAllText($file, $vbsBody, [Text.Encoding]::Unicode)
   $act = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('//Nologo "' + $file + '"')
-  $pri = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+  # RunLevel Highest = berjalan sebagai Administrator tanpa jendela UAC (jika akunnya admin)
+  $lvl = 'Limited'
+  if ($Elevated) { $lvl = 'Highest' }
+  $pri = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel $lvl
   $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel
   Register-ScheduledTask -TaskName $name -TaskPath $TaskPath -Action $act -Principal $pri -Settings $set -Force -ErrorAction Stop | Out-Null
   Start-ScheduledTask -TaskName $name -TaskPath $TaskPath -ErrorAction Stop
   return $user
+}
+
+function Test-UserAdmin([string]$user) {
+  try {
+    $m = @(Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop | ForEach-Object { [string]$_.Name })
+    return ($m -contains $user)
+  } catch { return $null }
+}
+
+function ConvertTo-B64([string]$s) { return [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$s)) }
+
+# autopilot.ps1 (klik otomatis jendela pembuka Exam Browser) diunduh dari backend bila belum ada/versi lama
+function Update-Autopilot {
+  $head = '# ProktorLab Autopilot ' + $AutopilotVersion
+  if (Test-Path -LiteralPath $AutopilotFile) {
+    $first = (Get-Content -LiteralPath $AutopilotFile -TotalCount 1 -ErrorAction SilentlyContinue)
+    if ($first -eq $head) { return }
+  }
+  $sep = '?'
+  if ($Server.Contains('?')) { $sep = '&' }
+  $resp = Invoke-WebRequest -Uri ($Server + $sep + 'f=autopilot&k=' + [uri]::EscapeDataString($Key)) -UseBasicParsing -TimeoutSec 60
+  $code = [string]$resp.Content
+  if (-not $code.StartsWith('# ProktorLab Autopilot')) { throw 'Unduhan autopilot tidak valid. Perbarui Code.gs dan Agen.gs di Apps Script.' }
+  [IO.File]::WriteAllText($AutopilotFile, $code, (New-Object Text.UTF8Encoding($true)))
+  Write-Log 'autopilot.ps1 diperbarui.'
 }
 
 function Clear-RunTasks {
@@ -399,6 +432,9 @@ function Invoke-Checkin {
     $script:ExamArgs = [string]$res.cfg.examArgs
     $script:ExamProc = [string]$res.cfg.examProc
     $script:ExamAuto = ($res.cfg.examAuto -ne $false)
+    $script:ExamElevate = ($res.cfg.examElevate -eq $true)
+    $script:ExamClick = ($res.cfg.examClick -eq $true)
+    $script:ExamRules = [string]$res.cfg.examRules
     $sig = $script:ExamPath + '|' + $script:ExamProc + '|' + $script:ExamAuto
     if ($sig -ne $script:ExamSig) {
       # pengaturan lokasi berubah: cek ulang segera pada laporan berikutnya
@@ -451,19 +487,45 @@ function Invoke-Job($j) {
           $msg += ' Atur lokasi khusus komputer ini di panel (menu Endpoint).'
           throw $msg
         }
-        $cmd = '"' + $exe + '"'
-        if ($script:ExamArgs) { $cmd += ' ' + $script:ExamArgs }
         $vbs = 'Set sh = CreateObject("WScript.Shell")' + "`r`n"
         $vbs += 'sh.CurrentDirectory = ' + (ConvertTo-Vbs ([IO.Path]::GetDirectoryName($exe))) + "`r`n"
-        $vbs += 'sh.Run ' + (ConvertTo-Vbs $cmd) + ', 3, False'
-        $u = Invoke-AsUser $vbs 'exam'
+        $mode = @()
+        $useAuto = $false
+        $autoErr = ''
+        if ($script:ExamClick -and $script:ExamRules.Trim()) {
+          try { Update-Autopilot; $useAuto = $true } catch { $autoErr = [string]$_.Exception.Message }
+        }
+        if ($useAuto) {
+          # buka lewat autopilot: Exam Browser dibuka lalu tombol OK/RUN/Yes diklik otomatis
+          $sysRoot = $env:SystemRoot
+          if (-not $sysRoot) { $sysRoot = 'C:\Windows' }
+          $ps = $sysRoot + '\System32\WindowsPowerShell\v1.0\powershell.exe'
+          $names = ([string]$script:ExamProc + ',' + ((Get-Leaf $exe) -replace '\.exe$', '')).Trim(',')
+          $cmd = '"' + $ps + '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $AutopilotFile + '"' +
+            ' -ExeB64 ' + (ConvertTo-B64 $exe) + ' -ArgsB64 ' + (ConvertTo-B64 $script:ExamArgs) +
+            ' -RulesB64 ' + (ConvertTo-B64 $script:ExamRules) + ' -NamesB64 ' + (ConvertTo-B64 $names) + ' -Timeout 150'
+          $vbs += 'sh.Run ' + (ConvertTo-Vbs $cmd) + ', 0, False'
+          $mode += 'klik otomatis'
+        } else {
+          $cmd = '"' + $exe + '"'
+          if ($script:ExamArgs) { $cmd += ' ' + $script:ExamArgs }
+          $vbs += 'sh.Run ' + (ConvertTo-Vbs $cmd) + ', 3, False'
+        }
+        if ($script:ExamElevate) { $mode += 'Administrator' }
+        $u = Invoke-AsUser $vbs 'exam' -Elevated:$script:ExamElevate
+        $note = ''
+        if ($mode.Count) { $note = ' [' + ($mode -join ', ') + ']' }
+        if ($autoErr) { $note += ' Klik otomatis tidak aktif: ' + $autoErr }
+        if ($script:ExamElevate -and ((Test-UserAdmin $u) -eq $false)) {
+          $note += ' Peringatan: akun ' + $u + ' bukan Administrator, jendela UAC akan meminta kata sandi admin.'
+        }
         $ok = $false
         for ($w = 0; $w -lt 16; $w++) {
           Start-Sleep -Milliseconds 500
           if (@(Get-ExamProcesses).Count -gt 0) { $ok = $true; break }
         }
-        if ($ok) { Add-Result $jid 'ok' ('Exam Browser dibuka untuk ' + $u + ' (' + $exe + ').') }
-        else { Add-Result $jid 'ok' ('Perintah buka dikirim ke ' + $u + ' (proses belum terdeteksi, cek nama proses di panel).') }
+        if ($ok) { Add-Result $jid 'ok' ('Exam Browser dibuka untuk ' + $u + ' (' + $exe + ').' + $note) }
+        else { Add-Result $jid 'ok' ('Perintah buka dikirim ke ' + $u + ' (proses belum terdeteksi, cek nama proses di panel).' + $note) }
       }
       'close_exam' {
         $procs = @(Get-ExamProcesses)
@@ -527,6 +589,7 @@ function Invoke-Job($j) {
         if (-not $code.StartsWith('# ProktorLab Agent')) { throw 'Unduhan agen tidak valid.' }
         $target = Join-Path $Base 'agent.ps1'
         [IO.File]::WriteAllText($target, $code, (New-Object Text.UTF8Encoding($true)))
+        try { Remove-Item -LiteralPath $AutopilotFile -Force -ErrorAction SilentlyContinue } catch {}
         Add-Result $jid 'ok' 'Agen diperbarui, memulai ulang agen...'
         try { Invoke-Checkin } catch {}
         $script:Restart = $true

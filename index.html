@@ -386,6 +386,7 @@ var SCRIPTS = [
 var SCRIPT = {};
 SCRIPTS.forEach(function (s) { SCRIPT[s.id] = s; });
 
+var ANBK_RULES = '* > OK/Oke\nExambrowser Client > RUN\nPersetujuan* > Yes/Ya';
 var PRESETS = {
   seb: { label: 'Safe Exam Browser', path: 'C:\\Program Files\\SafeExamBrowser\\Application\\SafeExamBrowser.exe\nC:\\Program Files (x86)\\SafeExamBrowser\\Application\\SafeExamBrowser.exe', args: '', proc: 'SafeExamBrowser*' },
   exambro: { label: 'Exam Browser (.exe lain)', path: 'C:\\Program Files\\ExamBrowser\\ExamBrowser.exe\nC:\\Program Files (x86)\\ExamBrowser\\ExamBrowser.exe', args: '', proc: 'ExamBrowser' },
@@ -654,7 +655,7 @@ var Demo = (function () {
     }
     st = {
       settings: { school: 'SMKN 1 Murung Pudak', tz: 'Asia/Makassar', interval: 10, examPreset: 'seb',
-        examPath: PRESETS.seb.path, examAuto: true, examArgs: '', examProc: PRESETS.seb.proc, groups: [NEW_GROUP, 'Lab TJKT 1', 'Lab TJKT 2', 'Ruang Proktor'], defaultGroup: NEW_GROUP },
+        examPath: PRESETS.seb.path, examAuto: true, examElevate: false, examClick: true, examRules: ANBK_RULES, examArgs: '', examProc: PRESETS.seb.proc, groups: [NEW_GROUP, 'Lab TJKT 1', 'Lab TJKT 2', 'Ruang Proktor'], defaultGroup: NEW_GROUP },
       eps: eps, jobs: [], rows: {}, layar: lay, key: DEMO_KEY
     };
     // contoh riwayat
@@ -699,7 +700,10 @@ var Demo = (function () {
         if (e.exam) return setRow(job, epId, 'Berhasil', 'Exam Browser sudah berjalan.');
         var ex = demoExam(e);
         if (!ex.ok) return setRow(job, epId, 'Gagal', 'Exam Browser tidak ditemukan di komputer ini. Pencarian otomatis juga tidak menemukan. Atur lokasi khusus komputer ini di panel (menu Endpoint).');
-        e.exam = true; return setRow(job, epId, 'Berhasil', 'Exam Browser dibuka untuk ' + user + ' (' + ex.path + ').');
+        var md = [];
+        if (st.settings.examClick !== false && String(st.settings.examRules || '').trim()) md.push('klik otomatis');
+        if (st.settings.examElevate) md.push('Administrator');
+        e.exam = true; return setRow(job, epId, 'Berhasil', 'Exam Browser dibuka untuk ' + user + ' (' + ex.path + ').' + (md.length ? ' [' + md.join(', ') + ']' : ''));
       }
       case 'close_exam':
         if (!e.exam) return setRow(job, epId, 'Berhasil', 'Tidak ada Exam Browser yang berjalan.');
@@ -828,6 +832,9 @@ var Demo = (function () {
     clearHistory: function () { st.jobs = []; st.rows = {}; return { ok: true }; },
     saveSettings: function (d) {
       if (d.examAuto != null) st.settings.examAuto = !!d.examAuto;
+      if (d.examElevate != null) st.settings.examElevate = !!d.examElevate;
+      if (d.examClick != null) st.settings.examClick = !!d.examClick;
+      if (d.examRules != null) st.settings.examRules = String(d.examRules);
       ['school', 'tz', 'examPreset', 'examPath', 'examArgs', 'examProc', 'defaultGroup'].forEach(function (k) { if (d[k] != null) st.settings[k] = String(d[k]); });
       if (d.interval != null) st.settings.interval = Math.min(120, Math.max(5, Math.round(Number(d.interval) || 10)));
       persistLayar();
@@ -1604,6 +1611,12 @@ VIEWS.scripts = {
       '<label class="f">Argumen tambahan <span class="hint">opsional, misalnya alamat ujian atau file konfigurasi .seb</span><input class="inp mono" id="ex-args" value="' + esc(s.examArgs) + '"></label>' +
       '<label class="f">Nama proses <span class="hint">untuk deteksi & #Close ExamBrowser. Pisahkan dengan koma, boleh pakai *</span><input class="inp mono" id="ex-proc" value="' + esc(s.examProc) + '"></label>' +
       '<label class="radio" style="font-size:13.5px"><input type="checkbox" id="ex-auto"' + (s.examAuto !== false ? ' checked' : '') + '><span><b>Cari otomatis</b> jika semua lokasi di atas tidak ada di sebuah komputer <span class="muted">(Program Files, shortcut Desktop & Start Menu, folder pengguna, drive D/E)</span></span></label>' +
+      '<div class="h-sec" style="margin-top:6px">Saat Exam Browser dibuka</div>' +
+      '<label class="radio" style="font-size:13.5px"><input type="checkbox" id="ex-elev"' + (s.examElevate ? ' checked' : '') + '><span><b>Jalankan sebagai Administrator</b>, jendela UAC <i>"Do you want to allow this app…"</i> tidak muncul. <span class="muted">Akun Windows siswa harus anggota Administrators. Jendela UAC tidak bisa diklik oleh program apa pun, jadi ini satu-satunya cara melewatinya.</span></span></label>' +
+      '<label class="radio" style="font-size:13.5px"><input type="checkbox" id="ex-click"' + (s.examClick !== false ? ' checked' : '') + '><span><b>Klik otomatis</b> tombol di jendela pembuka (OK, RUN, Yes, …) sampai aplikasi ujian terbuka.</span></label>' +
+      '<label class="f">Aturan klik otomatis <span class="hint">satu per baris: <span class="mono">Judul jendela &gt; Tombol</span>. Pakai <span class="mono">*</span> untuk jendela Exam Browser mana saja, pisahkan pilihan tombol dengan <span class="mono">/</span>. Tiap tombol diklik sekali per jendela.</span>' +
+      '<textarea class="inp mono" id="ex-rules" rows="4" spellcheck="false">' + esc(s.examRules != null ? s.examRules : ANBK_RULES) + '</textarea>' +
+      '<span class="hint"><button type="button" class="link-btn" data-act="anbk-rules">Pakai contoh Exambrowser ANBK</button> · Baris diawali # diabaikan.</span></label>' +
       '<div class="box info" style="font-size:13px">Ada komputer yang lokasinya berbeda? Tambahkan lokasinya di daftar di atas, atau atur <b>lokasi khusus</b> untuk komputer tertentu: menu Endpoint → centang komputer → <b>Atur Endpoint → Atur lokasi Exam Browser</b>. Cek nama proses lewat Task Manager → tab Details.</div>' +
       '<div id="ex-status"></div>' +
       '<div><button class="btn" type="submit">Simpan konfigurasi</button></div></form></section></div>';
@@ -1613,7 +1626,9 @@ VIEWS.scripts = {
     });
     $('#exam-form').addEventListener('submit', function (e) {
       e.preventDefault();
-      act('saveSettings', { examPreset: $('#ex-preset').value, examPath: pathLines($('#ex-path').value).join('\n'), examAuto: $('#ex-auto').checked, examArgs: $('#ex-args').value.trim(), examProc: $('#ex-proc').value.trim() },
+      act('saveSettings', { examPreset: $('#ex-preset').value, examPath: pathLines($('#ex-path').value).join('\n'), examAuto: $('#ex-auto').checked,
+        examElevate: $('#ex-elev').checked, examClick: $('#ex-click').checked, examRules: $('#ex-rules').value.trim(),
+        examArgs: $('#ex-args').value.trim(), examProc: $('#ex-proc').value.trim() },
         'Konfigurasi Exam Browser disimpan. Agen memakai pengaturan baru dalam beberapa detik.').then(function (r) { S.settings = r.settings; VIEWS.scripts.update(); });
     });
     this.update();
@@ -2146,6 +2161,12 @@ document.addEventListener('click', function (e) {
       $('#exf-clear').onclick = function () { saveX(''); };
       break;
     }
+    case 'anbk-rules':
+      $('#ex-rules').value = ANBK_RULES;
+      $('#ex-click').checked = true;
+      $('#ex-elev').checked = true;
+      toast('Contoh aturan ANBK diisi. Klik Simpan konfigurasi.');
+      break;
     case 'show-missing':
       S.filt = { q: '', st: '', ex: 'missing', os: '' };
       go('eps', {});
