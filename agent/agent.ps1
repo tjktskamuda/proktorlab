@@ -6,8 +6,8 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.5.0'
-$AutopilotVersion = '1.4.0'
+$AgentVersion = '1.6.0'
+$AutopilotVersion = '1.5.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -73,6 +73,9 @@ $Jobs      = @{}
 $Done      = New-Object System.Collections.ArrayList
 $Results   = New-Object System.Collections.ArrayList
 $Acks      = New-Object System.Collections.ArrayList
+$Notes     = New-Object System.Collections.ArrayList
+$Follows   = New-Object System.Collections.ArrayList
+$FollowAt  = [datetime]::MinValue
 $FailCount = 0
 $NextCheck = Get-Date
 $NextClean = (Get-Date).AddSeconds(20)
@@ -80,7 +83,7 @@ $Restart   = $false
 
 function Save-State {
   try {
-    $o = @{ done = @($Done | Select-Object -Last 300); results = @($Results); examFound = $script:ExamFound; examLearned = @($ExamLearned) }
+    $o = @{ done = @($Done | Select-Object -Last 300); results = @($Results); notes = @($Notes); examFound = $script:ExamFound; examLearned = @($ExamLearned) }
     [IO.File]::WriteAllText($StateFile, (ConvertTo-Json -InputObject $o -Depth 5 -Compress), (New-Object Text.UTF8Encoding($false)))
   } catch { Write-Log ('Gagal simpan state: ' + $_.Exception.Message) }
 }
@@ -94,6 +97,9 @@ function Load-State {
     foreach ($n in @($s.examLearned)) { if ($n -and -not ($ExamLearned -contains [string]$n)) { [void]$ExamLearned.Add([string]$n) } }
     foreach ($r in @($s.results)) {
       if ($r -and $r.id) { [void]$Results.Add(@{ id = [string]$r.id; s = [string]$r.s; o = [string]$r.o; t = $r.t }) }
+    }
+    foreach ($r in @($s.notes)) {
+      if ($r -and $r.id) { [void]$Notes.Add(@{ id = [string]$r.id; s = [string]$r.s; o = [string]$r.o }) }
     }
   } catch { Write-Log 'state.json rusak, diabaikan.' }
 }
@@ -533,6 +539,81 @@ function Read-RunLog([string]$path, [int]$n = 5) {
   return @()
 }
 
+# ---------- laporan klik otomatis yang menyusul ----------
+function Test-UacOpen { return (@(Get-Process -Name consent -ErrorAction SilentlyContinue).Count -gt 0) }
+
+function Add-Note([string]$jobId, [string]$status, [string]$output) {
+  if ($output.Length -gt 2900) { $output = $output.Substring(0, 2900) }
+  [void]$Notes.Add(@{ id = $jobId; s = $status; o = $output })
+  Save-State
+  $script:NextCheck = Get-Date
+}
+
+function Get-DefenderBlock($since) {
+  try {
+    $d = @(Get-MpThreatDetection -ErrorAction Stop | Where-Object {
+      $_.InitialDetectionTime -ge $since.AddMinutes(-2) -and (([string]($_.Resources -join ' ')) -match 'ProktorLab|autopilot') })
+    if ($d.Count) { return ([string]($d[0].Resources -join ' ')) }
+  } catch {}
+  return ''
+}
+
+function Complete-Follow($f, $lines, [string]$sumLine) {
+  $msg = $f.base
+  $status = 'ok'
+  if ($lines.Count -eq 0) {
+    $status = 'err'
+    $msg += "`nKlik otomatis TIDAK berjalan di komputer ini (tidak ada catatan sama sekali)."
+    $blk = Get-DefenderBlock $f.start
+    if ($blk) { $msg += ' Windows Defender memblokir: ' + $blk + '.' }
+    else { $msg += ' Kemungkinan diblokir antivirus atau kebijakan Windows.' }
+  } elseif (-not $sumLine) {
+    $status = 'err'
+    $msg += "`nKlik otomatis berhenti sebelum selesai. Catatan terakhir:`n" + (($lines | Select-Object -Last 6) -join "`n")
+  } else {
+    $o = $null
+    try { $o = $sumLine.Substring($sumLine.IndexOf('RINGKASAN ') + 10) | ConvertFrom-Json } catch {}
+    if (-not $o) { $o = [pscustomobject]@{ clicked = @(); missing = @(); failed = @(); uac = $false; admin = '?' } }
+    $clicked = @($o.clicked | Where-Object { $_ })
+    $missing = @($o.missing | Where-Object { $_ })
+    $failed = @($o.failed | Where-Object { $_ })
+    if ($o.uac) { $f.uac = $true }
+    if ($clicked.Count) { $msg += "`nKlik otomatis: " + ($clicked -join ', ') + ' sudah diklik.' }
+    else { $msg += "`nKlik otomatis: belum ada tombol yang diklik." }
+    if ($failed.Count) { $status = 'err'; $msg += ' Gagal diklik: ' + ($failed -join '; ') + '.' }
+    if ($missing.Count) { $status = 'err'; $msg += ' Belum muncul/tidak ditemukan: ' + ($missing -join '; ') + '.' }
+    if ($failed.Count -and [string]$o.admin -eq 'False') {
+      $msg += ' Klik otomatis berjalan tanpa hak Administrator sehingga tidak bisa mengklik jendela Exam Browser yang berjalan sebagai Administrator.'
+    }
+    if ($status -eq 'err') {
+      $why = @($lines | Where-Object { $_ -match 'Jendela baru|Sudah terbuka|tidak bereaksi|tidak bisa|UI Automation|Proses Exam Browser' } | Select-Object -Last 8)
+      if ($why.Count) { $msg += "`nYang terlihat oleh klik otomatis:`n" + ($why -join "`n") }
+    }
+  }
+  if ($f.uac) {
+    if (-not $f.elev) { $msg += "`nJendela UAC (Do you want to allow this app...) muncul. Jendela ini tidak bisa diklik program apa pun; centang 'Jalankan sebagai Administrator' di Pustaka Skrip agar tidak muncul lagi." }
+    else { $msg += "`nJendela UAC tetap muncul walau 'Jalankan sebagai Administrator' aktif: akun Windows siswa bukan anggota Administrators." }
+  }
+  Add-Note $f.jid $status $msg
+}
+
+function Invoke-Follows {
+  if ($Follows.Count -eq 0) { return }
+  if ((Get-Date) -lt $script:FollowAt) { return }
+  $script:FollowAt = (Get-Date).AddSeconds(2)
+  $uac = Test-UacOpen
+  foreach ($f in @($Follows)) {
+    if ($uac) { $f.uac = $true }
+    $age = ((Get-Date) - $f.start).TotalSeconds
+    $lines = @(Read-RunLog $f.log 300)
+    $sumLine = [string](@($lines | Where-Object { $_ -match 'RINGKASAN \{' }) | Select-Object -Last 1)
+    $finish = [bool]$sumLine -or ($lines.Count -eq 0 -and $age -gt 30) -or ($age -gt 200)
+    if (-not $finish) { continue }
+    [void]$Follows.Remove($f)
+    try { Complete-Follow $f $lines $sumLine } catch { Write-Log ('Gagal menyusun laporan klik otomatis: ' + $_.Exception.Message) }
+  }
+}
+
 # Buka file Exam Browser di sesi pengguna.
 #  - .exe + Administrator (atau tanpa VBScript): dijalankan langsung oleh Task Scheduler
 #  - selain itu lewat shell Windows (sama seperti klik dua kali; UAC muncul bila perlu)
@@ -644,6 +725,7 @@ function Invoke-Checkin {
   }
   $sendResults = @($Results.ToArray())
   $sendAcks = @($Acks.ToArray())
+  $sendNotes = @($Notes.ToArray())
   $examProcs = @(Get-ExamProcesses)
   $examRunning = ($examProcs.Count -gt 0)
   $examNames = @($examProcs | ForEach-Object { $_.ProcessName } | Sort-Object -Unique | Select-Object -First 6)
@@ -651,7 +733,7 @@ function Invoke-Checkin {
     k = $Key; a = 'checkin'; id = $Id; ver = $AgentVersion; grp = $Group
     user = (Get-LoggedUser); exam = $examRunning
     ip = $script:Info.ip; mac = $script:Info.mac; bc = $script:Info.bc; os = $script:Info.os
-    results = $sendResults; acks = $sendAcks
+    results = $sendResults; acks = $sendAcks; notes = $sendNotes
     exp = $script:ExamUsed; eok = [bool]$script:ExamUsed; ecfg = [bool]$script:ExamSig
     epl = ($examNames -join ','); edir = $(if ($script:ExamDirDetect) { Get-ExamDir } else { '' })
   }
@@ -666,7 +748,8 @@ function Invoke-Checkin {
   # hapus hasil & ack yang sudah terkirim
   foreach ($r in $sendResults) { $Results.Remove($r) }
   foreach ($a in $sendAcks) { $Acks.Remove($a) }
-  if ($sendResults.Count -gt 0) { Save-State }
+  foreach ($n in $sendNotes) { $Notes.Remove($n) }
+  if ($sendResults.Count -gt 0 -or $sendNotes.Count -gt 0) { Save-State }
 
   $script:Offset = [double]$res.now - (($t0 + $t1) / 2)
   if ($res.interval) { $script:Interval = [math]::Max(3, [int]$res.interval) }
@@ -759,8 +842,10 @@ function Invoke-Job($j) {
         $ok = $false
         $launchErr = ''
         $retried = $false
+        $uacSeen = $false
         for ($w = 0; $w -lt 50; $w++) {
           Start-Sleep -Milliseconds 500
+          if (-not $uacSeen -and (Test-UacOpen)) { $uacSeen = $true }
           if ($w % 4 -eq 3) { Update-ExamLearned }
           if (@(Get-ExamProcesses).Count -gt 0) { $ok = $true; break }
           if ($w -ge 2 -and $w % 2 -eq 0 -and $launch.how -ne 'shell') {
@@ -781,7 +866,14 @@ function Invoke-Job($j) {
         if ($mode.Count) { $note = ' [' + ($mode -join ', ') + ']' }
         if ($warn.Count) { $note += ' ' + ($warn -join ' ') }
         if ($ok) {
-          Add-Result $jid 'ok' ('Exam Browser dibuka untuk ' + $u + ' (' + $exe + ').' + $note)
+          $base = 'Exam Browser dibuka untuk ' + $u + ' (' + $exe + ').' + $note
+          if ($apLog) {
+            # hasil klik otomatis (OK/RUN/Yes) dilaporkan menyusul ke baris yang sama
+            [void]$Follows.Add(@{ jid = $jid; log = $apLog; base = $base; start = Get-Date; uac = $uacSeen; elev = [bool]$script:ExamElevate })
+            Add-Result $jid 'ok' ($base + "`nKlik otomatis sedang berjalan, hasilnya muncul di sini dalam 1-3 menit.")
+          } else {
+            Add-Result $jid 'ok' $base
+          }
         } else {
           if ($launchErr) { $msg = 'Exam Browser gagal dibuka: ' + $launchErr + '. File: ' + $exe + '.' + $note }
           else {
@@ -971,6 +1063,7 @@ try {
       }
     }
     Invoke-DueJobs
+    Invoke-Follows
     if ((Get-Date) -ge $NextClean) { Clear-RunTasks; $NextClean = (Get-Date).AddSeconds(60) }
     Start-Sleep -Milliseconds 500
   }

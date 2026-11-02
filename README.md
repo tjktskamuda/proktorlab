@@ -116,6 +116,12 @@ Menu **Pustaka Skrip → Konfigurasi Exam Browser**. Pilih preset (Safe Exam Bro
 
   Format: `Judul jendela > Tombol`, `*` = jendela Exam Browser mana saja, `/` memisahkan pilihan tombol, baris diawali `#` diabaikan. Setiap tombol diklik sekali per jendela. Hapus baris *Persetujuan* jika sekolah ingin siswa menyetujui perekaman sendiri. Log klik disimpan di `C:\ProgramData\ProktorLab\run\PL-klik-*.log` dan ikut ditampilkan di Riwayat bila pembukaan gagal.
 
+**Hasil klik otomatis dilaporkan ke panel (v1.6.0):** setelah Exam Browser terbuka, Riwayat menulis *"Klik otomatis sedang berjalan…"*, lalu dalam 1–3 menit baris yang sama diganti dengan hasilnya: tombol yang sudah diklik (mis. *OK, RUN, Yes*), tombol yang tidak muncul/gagal diklik beserta jendela yang terlihat, munculnya jendela UAC, atau keterangan bahwa klik otomatis tidak berjalan sama sekali (mis. diblokir antivirus). Status menjadi **Gagal** bila ada tombol yang belum diklik.
+
+Klik otomatis memeriksa juga dialog yang "dimiliki" jendela lain (seperti *Persetujuan* di atas jendela *Exambrowser Client*), mencocokkan judul jendela secara longgar (mengandung teks, tidak peka huruf besar), memastikan setiap klik benar-benar berefek, dan bila tidak, mencoba lagi dengan mouse lalu keyboard. Tombol seperti RUN tidak pernah diklik dua kali.
+
+> **Exambrowser ANBK wajib "Jalankan sebagai Administrator".** `runningexam.exe` meminta izin Administrator; tanpa opsi ini jendela UAC muncul di setiap komputer dan Windows tidak mengizinkan program apa pun mengkliknya. Panel menampilkan peringatan bila opsi ini mati.
+
 **Cara agen membuka Exam Browser (v1.5.0):** klik otomatis disiapkan lebih dulu, lalu Exam Browser dibuka terpisah di akun siswa (folder kerja = folder Exam Browser, prioritas normal), jadi Exam Browser tetap terbuka walaupun klik otomatis bermasalah. Bila *Jalankan sebagai Administrator* aktif, file .exe dijalankan **langsung oleh Task Scheduler** dengan hak tertinggi; jika Windows menolaknya (misalnya akun bukan Administrator), agen mengulang lewat shell Windows seperti klik dua kali. Tanpa opsi itu, Exam Browser dibuka lewat shell Windows. Agen menunggu hingga 25 detik; jika Exam Browser tidak terlihat berjalan, status di Riwayat menjadi **Gagal** beserta penyebabnya (kode Windows, log klik otomatis), bukan *Berhasil* palsu.
 
 **Saat Exam Browser ditutup** (#Close ExamBrowser):

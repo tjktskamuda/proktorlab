@@ -17,7 +17,7 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.5.1';
+var APP_VERSION = '1.6.0';
 
 var SHEETS = {
   EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
@@ -329,6 +329,9 @@ function agentCheckin_(b) {
   var q = qGet_(id);
   var expired = q.some(function (j) { return j.dl < now; });
   if (results.length || acks.length || expired) q = applyAgentUpdates_(id, results, acks, now);
+  // laporan susulan (mis. hasil klik otomatis) untuk perintah yang sudah selesai
+  var notes = [].concat(b.notes || []).filter(function (x) { return x && x.id; });
+  if (notes.length) applyNotes_(id, notes);
 
   return {
     ok: true,
@@ -441,6 +444,16 @@ function applyAgentUpdates_(id, results, acks, now) {
     writes.forEach(function (w) { writeRows_(sh, w.j, w.status, w.msg, w.onlyIf, w.notIf); });
   }
   return keep;
+}
+
+/** Laporan susulan agen: hanya baris Hasil milik komputer itu sendiri (kunci "IDOTOMASI|ID") yang diubah. */
+function applyNotes_(id, notes) {
+  var sh = sheet_(SHEETS.RES);
+  notes.slice(0, 20).forEach(function (n) {
+    try {
+      writeRows_(sh, { id: str_(n.id, 40), t: [id], r0: 0 }, n.s === 'ok' ? 'Berhasil' : 'Gagal', str_(n.o, 3000) || '-', null, ['Dibatalkan']);
+    } catch (e) {}
+  });
 }
 
 /** Perbarui baris Hasil milik sebuah item antrean. */

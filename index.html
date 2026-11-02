@@ -1649,6 +1649,7 @@ VIEWS.scripts = {
       '<label class="radio" style="font-size:13.5px"><input type="checkbox" id="ex-auto"' + (s.examAuto !== false ? ' checked' : '') + '><span><b>Cari otomatis</b> jika semua lokasi di atas tidak ada di sebuah komputer <span class="muted">(Program Files, shortcut Desktop & Start Menu, folder pengguna, drive D/E)</span></span></label>' +
       '<div class="h-sec" style="margin-top:6px">Saat Exam Browser dibuka</div>' +
       '<label class="radio" style="font-size:13.5px"><input type="checkbox" id="ex-elev"' + (s.examElevate ? ' checked' : '') + '><span><b>Jalankan sebagai Administrator</b>, jendela UAC <i>"Do you want to allow this app…"</i> tidak muncul. <span class="muted">Akun Windows siswa harus anggota Administrators. Jendela UAC tidak bisa diklik oleh program apa pun, jadi ini satu-satunya cara melewatinya.</span></span></label>' +
+      '<div id="ex-elev-warn"></div>' +
       '<label class="radio" style="font-size:13.5px"><input type="checkbox" id="ex-click"' + (s.examClick !== false ? ' checked' : '') + '><span><b>Klik otomatis</b> tombol di jendela pembuka (OK, RUN, Yes, …) sampai aplikasi ujian terbuka.</span></label>' +
       '<label class="f">Aturan klik otomatis <span class="hint">satu per baris: <span class="mono">Judul jendela &gt; Tombol</span>. Pakai <span class="mono">*</span> untuk jendela Exam Browser mana saja, pisahkan pilihan tombol dengan <span class="mono">/</span>. Tiap tombol diklik sekali per jendela.</span>' +
       '<textarea class="inp mono" id="ex-rules" rows="4" spellcheck="false">' + esc(s.examRules != null ? s.examRules : ANBK_RULES) + '</textarea>' +
@@ -1659,6 +1660,14 @@ VIEWS.scripts = {
       '<div class="box info" style="font-size:13px">Ada komputer yang lokasinya berbeda? Tambahkan lokasinya di daftar di atas, atau atur <b>lokasi khusus</b> untuk komputer tertentu: menu Endpoint → centang komputer → <b>Atur Endpoint → Atur lokasi Exam Browser</b>. Cek nama proses lewat Task Manager → tab Details.</div>' +
       '<div id="ex-status"></div>' +
       '<div><button class="btn" type="submit">Simpan konfigurasi</button></div></form></section></div>';
+    var elevWarn = function () {
+      var anbk = /exambrowser|runningexam|persetujuan/i.test($('#ex-rules').value + ' ' + $('#ex-path').value + ' ' + $('#ex-proc').value);
+      $('#ex-elev-warn').innerHTML = anbk && !$('#ex-elev').checked
+        ? '<div class="box warn" style="font-size:13px"><b>Exambrowser ANBK membutuhkan "Jalankan sebagai Administrator".</b> Tanpa opsi ini, jendela UAC <i>"Do you want to allow this app… runningexam.exe"</i> muncul di setiap komputer dan harus diklik Yes satu per satu, karena Windows tidak mengizinkan program apa pun mengkliknya.</div>' : '';
+    };
+    ['#ex-elev', '#ex-rules', '#ex-path', '#ex-proc'].forEach(function (q) { $(q).addEventListener('input', elevWarn); $(q).addEventListener('change', elevWarn); });
+    VIEWS.scripts._elevWarn = elevWarn;
+    elevWarn();
     $('#ex-preset').addEventListener('change', function () {
       var p = PRESETS[this.value];
       if (this.value !== 'custom') { $('#ex-path').value = p.path; $('#ex-args').value = p.args; $('#ex-proc').value = p.proc; }
@@ -2210,7 +2219,8 @@ document.addEventListener('click', function (e) {
       var cur = pr.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
       ANBK_PROC.split(',').forEach(function (n) { if (cur.map(function (x) { return x.toLowerCase(); }).indexOf(n) < 0) cur.push(n); });
       pr.value = cur.join(',');
-      toast('Contoh ANBK diisi (aturan klik, shortcut keluar Ctrl+C+B+L, nama proses runningexam). Klik Simpan konfigurasi.');
+      if (VIEWS.scripts._elevWarn) VIEWS.scripts._elevWarn();
+      toast('Contoh ANBK diisi (aturan klik, Jalankan sebagai Administrator, shortcut keluar Ctrl+C+B+L, nama proses runningexam). Klik Simpan konfigurasi.');
       break;
     }
     case 'show-missing':
