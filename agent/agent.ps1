@@ -6,8 +6,8 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.4.0'
-$AutopilotVersion = '1.3.0'
+$AgentVersion = '1.5.0'
+$AutopilotVersion = '1.4.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -61,6 +61,12 @@ $ExamCloseKeys = ''
 $ExamDirDetect = $true
 $ExamLearned = New-Object System.Collections.ArrayList
 $LearnAt = [datetime]::MinValue
+$IsWin = ($env:OS -eq 'Windows_NT')
+$PsExe = ''
+if ($env:SystemRoot) { $PsExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' }
+if (-not $PsExe -or -not (Test-Path -LiteralPath $PsExe)) { try { $PsExe = (Get-Process -Id $PID).Path } catch {} }
+$LastTask = ''
+$TestProcs = @{}
 $Info      = $null
 $InfoAt    = [datetime]::MinValue
 $Jobs      = @{}
@@ -158,6 +164,7 @@ function Get-LoggedUser {
       if ($o.User) { return ([string]$o.Domain + '\' + [string]$o.User) }
     }
   } catch {}
+  if ($env:PROKTORLAB_TEST_USER) { return [string]$env:PROKTORLAB_TEST_USER }   # hanya untuk pengujian
   return ''
 }
 
@@ -224,8 +231,7 @@ function Start-ExplorerIfMissing([string]$user) {
       if (($o.Domain + '\' + $o.User) -eq $user) { return $false }
     }
   } catch { return $false }
-  $vbs = 'CreateObject("WScript.Shell").Run "explorer.exe", 1, False'
-  [void](Invoke-AsUser $vbs 'explorer')
+  [void](Invoke-AsUser '' 'explorer' -Exe 'explorer.exe')
   return $true
 }
 
@@ -404,23 +410,151 @@ function ConvertTo-Vbs([string]$s) {
   return '"' + $s + '"'
 }
 
-# Menjalankan skrip VBS kecil di sesi pengguna yang sedang login
-# (agen berjalan sebagai SYSTEM sehingga tidak punya layar sendiri).
-function Invoke-AsUser([string]$vbsBody, [string]$tag, [switch]$Elevated) {
+# Menjalankan program di sesi pengguna yang sedang login (agen berjalan
+# sebagai SYSTEM sehingga tidak punya layar sendiri), lewat tugas terjadwal
+# sekali pakai. -Exe: program dijalankan langsung oleh Task Scheduler.
+# Tanpa -Exe: skrip VBS kecil ($vbsBody) dijalankan dengan wscript.
+function Invoke-AsUser([string]$vbsBody, [string]$tag, [switch]$Elevated, [string]$Exe = '', [string]$Arguments = '', [string]$WorkDir = '') {
   $user = Get-LoggedUser
   if (-not $user) { throw 'Tidak ada pengguna yang sedang login di komputer ini.' }
   $name = 'PL-' + $tag + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
-  $file = Join-Path $RunDir ($name + '.vbs')
-  [IO.File]::WriteAllText($file, $vbsBody, [Text.Encoding]::Unicode)
-  $act = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('//Nologo "' + $file + '"')
+  $script:LastTask = $name
+  if (-not (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue)) {
+    # di luar Windows (hanya untuk pengujian): jalankan langsung
+    if (-not $Exe) { throw 'Task Scheduler tidak tersedia di komputer ini.' }
+    $sp = @{ FilePath = $Exe; PassThru = $true }
+    if ($Arguments) { $sp.ArgumentList = $Arguments }
+    if ($WorkDir) { $sp.WorkingDirectory = $WorkDir }
+    $script:TestProcs[$name] = Start-Process @sp -ErrorAction Stop
+    return $user
+  }
+  if ($Exe) {
+    $ap = @{ Execute = $Exe }
+    if ($Arguments) { $ap.Argument = $Arguments }
+    if ($WorkDir) { $ap.WorkingDirectory = $WorkDir }
+    $act = New-ScheduledTaskAction @ap
+  } else {
+    $file = Join-Path $RunDir ($name + '.vbs')
+    [IO.File]::WriteAllText($file, $vbsBody, [Text.Encoding]::Unicode)
+    $act = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('//Nologo "' + $file + '"')
+  }
   # RunLevel Highest = berjalan sebagai Administrator tanpa jendela UAC (jika akunnya admin)
   $lvl = 'Limited'
   if ($Elevated) { $lvl = 'Highest' }
   $pri = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel $lvl
-  $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel
+  # Priority 4 = prioritas normal (bawaan Task Scheduler 7 = di bawah normal, ikut menurun ke Exam Browser)
+  $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel -Priority 4
   Register-ScheduledTask -TaskName $name -TaskPath $TaskPath -Action $act -Principal $pri -Settings $set -Force -ErrorAction Stop | Out-Null
   Start-ScheduledTask -TaskName $name -TaskPath $TaskPath -ErrorAction Stop
   return $user
+}
+
+# hasil terakhir tugas sekali pakai (kode Windows); $null bila tidak diketahui
+function Get-TaskResult([string]$name) {
+  if (-not $name) { return $null }
+  if ($script:TestProcs.ContainsKey($name)) {
+    $tp = $script:TestProcs[$name]
+    if (-not $tp.HasExited) { return [int64]267009 }
+    return [int64]$tp.ExitCode
+  }
+  try { return [int64](Get-ScheduledTaskInfo -TaskName $name -TaskPath $TaskPath -ErrorAction Stop).LastTaskResult } catch { return $null }
+}
+
+# kode gagal-jalan dari Task Scheduler -> penjelasan (kosong = bukan kegagalan membuka program)
+function Get-LaunchError($code) {
+  if ($null -eq $code) { return '' }
+  $c = [int64]$code
+  if ($c -lt 0) { $c += 4294967296 }
+  if ($c -lt 2147942400 -or $c -gt 2148007935) { return '' }   # hanya 0x8007xxxx
+  $hex = '0x' + $c.ToString('X8')
+  switch ($c) {
+    2147942402 { return ('file program tidak ditemukan (' + $hex + ')') }
+    2147942403 { return ('folder tidak ditemukan (' + $hex + ')') }
+    2147942405 { return ('akses ditolak (' + $hex + ')') }
+    2147942667 { return ('folder kerja tidak valid (' + $hex + ')') }
+    2147943140 { return ('program meminta hak Administrator (' + $hex + ')') }
+    2147942593 { return ('file bukan program Windows yang valid (' + $hex + ')') }
+  }
+  return ('kode Windows ' + $hex)
+}
+
+# Windows Script Host (VBScript) tersedia? Bisa dimatikan kebijakan sekolah
+# atau tidak terpasang di Windows terbaru.
+function Test-Vbs {
+  if (-not $env:SystemRoot) { return $false }
+  if (-not (Test-Path -LiteralPath (Join-Path $env:SystemRoot 'System32\vbscript.dll'))) { return $false }
+  if (-not (Test-Path -LiteralPath (Join-Path $env:SystemRoot 'System32\wscript.exe'))) { return $false }
+  try {
+    $v = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Script Host\Settings' -ErrorAction Stop).Enabled
+    if ($null -ne $v -and [string]$v -eq '0') { return $false }
+  } catch {}
+  return $true
+}
+
+function Get-ParentDir([string]$path) {
+  $leaf = Get-Leaf $path
+  return ([string]$path).Substring(0, [math]::Max(0, ([string]$path).Length - $leaf.Length)).TrimEnd('\', '/')
+}
+
+# Jalankan autopilot.ps1 (klik otomatis / shortcut keluar) di sesi pengguna.
+# Pengaturan ditulis ke file JSON agar baris perintahnya selalu sederhana.
+# Mengembalikan lokasi file log autopilot (dibaca agen untuk laporan).
+function Start-Autopilot([hashtable]$job, [string]$tag, [switch]$Quiet) {
+  Update-Autopilot
+  $user = Get-LoggedUser
+  if (-not $user) { throw 'Tidak ada pengguna yang sedang login di komputer ini.' }
+  $base = 'PL-' + $tag + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+  $jobFile = Join-Path $RunDir ($base + '.json')
+  $logFile = Join-Path $RunDir ($base + '.log')
+  $job.log = $logFile
+  [IO.File]::WriteAllText($jobFile, (ConvertTo-Json -InputObject $job -Depth 4 -Compress), (New-Object Text.UTF8Encoding($true)))
+  [IO.File]::WriteAllText($logFile, '', (New-Object Text.UTF8Encoding($false)))
+  # log boleh ditulis pengguna (folder agen hanya bisa dibaca pengguna biasa)
+  if ($IsWin) { try { & icacls.exe $logFile /grant ($user + ':(M)') | Out-Null } catch {} }
+  $argStr = '-NoProfile -ExecutionPolicy Bypass '
+  if ($IsWin) { $argStr += '-WindowStyle Hidden ' }
+  $argStr += '-File "' + $AutopilotFile + '" -Job "' + $jobFile + '"'
+  if ($Quiet -and (Test-Vbs)) {
+    # lewat VBS agar jendela PowerShell sama sekali tidak muncul (tidak mengganggu fokus Exam Browser)
+    $vbs = 'CreateObject("WScript.Shell").Run ' + (ConvertTo-Vbs ('"' + $PsExe + '" ' + $argStr)) + ', 0, False'
+    [void](Invoke-AsUser $vbs $tag -Elevated)
+  } else {
+    [void](Invoke-AsUser '' $tag -Elevated -Exe $PsExe -Arguments $argStr -WorkDir $RunDir)
+  }
+  return $logFile
+}
+
+function Read-RunLog([string]$path, [int]$n = 5) {
+  try {
+    if ($path -and (Test-Path -LiteralPath $path)) {
+      return @(Get-Content -LiteralPath $path -Tail $n -Encoding UTF8 -ErrorAction Stop | Where-Object { ([string]$_).Trim() })
+    }
+  } catch {}
+  return @()
+}
+
+# Buka file Exam Browser di sesi pengguna.
+#  - .exe + Administrator (atau tanpa VBScript): dijalankan langsung oleh Task Scheduler
+#  - selain itu lewat shell Windows (sama seperti klik dua kali; UAC muncul bila perlu)
+function Start-ExamExe([string]$exe, [string]$wd, [switch]$Shell) {
+  $isExe = ($exe -match '\.exe$') -or -not $IsWin
+  $vbsOk = Test-Vbs
+  if (-not $Shell -and $isExe -and ($script:ExamElevate -or -not $vbsOk)) {
+    $u = Invoke-AsUser '' 'exam' -Elevated:$script:ExamElevate -Exe $exe -Arguments $script:ExamArgs -WorkDir $wd
+    return @{ user = $u; task = $script:LastTask; how = 'langsung' }
+  }
+  if ($vbsOk) {
+    $cmd = '"' + $exe + '"'
+    if ($script:ExamArgs) { $cmd += ' ' + $script:ExamArgs }
+    $vbs = 'Set sh = CreateObject("WScript.Shell")' + "`r`n"
+    if ($wd) { $vbs += 'sh.CurrentDirectory = ' + (ConvertTo-Vbs $wd) + "`r`n" }
+    $vbs += 'sh.Run ' + (ConvertTo-Vbs $cmd) + ', 3, False'
+    $u = Invoke-AsUser $vbs 'exam' -Elevated:$script:ExamElevate
+    return @{ user = $u; task = $script:LastTask; how = 'shell' }
+  }
+  # tanpa VBScript: minta Explorer membukanya (setara klik dua kali)
+  $u = Invoke-AsUser '' 'exam' -Exe 'explorer.exe' -Arguments ('"' + $exe + '"')
+  return @{ user = $u; task = $script:LastTask; how = 'explorer' }
 }
 
 function Test-UserAdmin([string]$user) {
@@ -453,8 +587,8 @@ function Clear-RunTasks {
     Get-ScheduledTask -TaskPath $TaskPath -ErrorAction SilentlyContinue |
       Where-Object { $_.State -ne 'Running' } |
       ForEach-Object { Unregister-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath -Confirm:$false -ErrorAction SilentlyContinue }
-    Get-ChildItem $RunDir -Filter '*.vbs' -ErrorAction SilentlyContinue |
-      Where-Object { $_.LastWriteTime -lt (Get-Date).AddMinutes(-10) } |
+    Get-ChildItem $RunDir -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.Extension -in @('.vbs', '.json', '.log') -and $_.LastWriteTime -lt (Get-Date).AddMinutes(-60) } |
       Remove-Item -Force -ErrorAction SilentlyContinue
   } catch {}
 }
@@ -589,7 +723,11 @@ function Invoke-Job($j) {
       'run_exam' {
         if (-not $script:ExamPath -and -not $script:ExamProc) { throw 'Lokasi Exam Browser belum diatur di panel (Pustaka Skrip).' }
         $running = @(Get-ExamProcesses)
-        if ($running.Count -gt 0) { Add-Result $jid 'ok' 'Exam Browser sudah berjalan.'; return }
+        if ($running.Count -gt 0) {
+          $rn = @($running | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ', '
+          Add-Result $jid 'ok' ('Exam Browser sudah berjalan (proses: ' + $rn + '). Untuk membuka ulang, jalankan #Close ExamBrowser dulu.')
+          return
+        }
         $exe = Resolve-ExamPath -Force
         $script:NextCheck = Get-Date
         if (-not $exe) {
@@ -599,46 +737,63 @@ function Invoke-Job($j) {
           $msg += ' Atur lokasi khusus komputer ini di panel (menu Endpoint).'
           throw $msg
         }
-        $vbs = 'Set sh = CreateObject("WScript.Shell")' + "`r`n"
-        $vbs += 'sh.CurrentDirectory = ' + (ConvertTo-Vbs ([IO.Path]::GetDirectoryName($exe))) + "`r`n"
+        $wd = Get-ParentDir $exe
         $mode = @()
-        $useAuto = $false
-        $autoErr = ''
+        $warn = @()
+        # 1) klik otomatis disiapkan lebih dulu, lalu Exam Browser dibuka terpisah:
+        #    bila klik otomatis bermasalah, Exam Browser tetap terbuka.
+        $apLog = ''
         if ($script:ExamClick -and $script:ExamRules.Trim()) {
-          try { Update-Autopilot; $useAuto = $true } catch { $autoErr = [string]$_.Exception.Message }
+          try {
+            $names = ([string]$script:ExamProc + ',' + ((Get-Leaf $exe) -replace '\.exe$', '')).Trim(',')
+            $dir = ''
+            if ($script:ExamDirDetect) { $dir = Get-ExamDir }
+            $apLog = Start-Autopilot @{ mode = 'open'; rules = $script:ExamRules; names = $names; dir = $dir; timeout = 150 } 'klik'
+            $mode += 'klik otomatis'
+          } catch { $warn += ('Klik otomatis tidak aktif: ' + $_.Exception.Message) }
         }
-        if ($useAuto) {
-          # buka lewat autopilot: Exam Browser dibuka lalu tombol OK/RUN/Yes diklik otomatis
-          $sysRoot = $env:SystemRoot
-          if (-not $sysRoot) { $sysRoot = 'C:\Windows' }
-          $ps = $sysRoot + '\System32\WindowsPowerShell\v1.0\powershell.exe'
-          $names = ([string]$script:ExamProc + ',' + ((Get-Leaf $exe) -replace '\.exe$', '')).Trim(',')
-          $cmd = '"' + $ps + '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $AutopilotFile + '"' +
-            ' -ExeB64 ' + (ConvertTo-B64 $exe) + ' -ArgsB64 ' + (ConvertTo-B64 $script:ExamArgs) +
-            ' -RulesB64 ' + (ConvertTo-B64 $script:ExamRules) + ' -NamesB64 ' + (ConvertTo-B64 $names) + ' -Timeout 150'
-          $vbs += 'sh.Run ' + (ConvertTo-Vbs $cmd) + ', 0, False'
-          $mode += 'klik otomatis'
-        } else {
-          $cmd = '"' + $exe + '"'
-          if ($script:ExamArgs) { $cmd += ' ' + $script:ExamArgs }
-          $vbs += 'sh.Run ' + (ConvertTo-Vbs $cmd) + ', 3, False'
-        }
+        # 2) buka Exam Browser
+        $launch = Start-ExamExe $exe $wd
+        $u = $launch.user
         if ($script:ExamElevate) { $mode += 'Administrator' }
-        $u = Invoke-AsUser $vbs 'exam' -Elevated:$script:ExamElevate
-        $note = ''
-        if ($mode.Count) { $note = ' [' + ($mode -join ', ') + ']' }
-        if ($autoErr) { $note += ' Klik otomatis tidak aktif: ' + $autoErr }
-        if ($script:ExamElevate -and ((Test-UserAdmin $u) -eq $false)) {
-          $note += ' Peringatan: akun ' + $u + ' bukan Administrator, jendela UAC akan meminta kata sandi admin.'
-        }
         $ok = $false
-        for ($w = 0; $w -lt 16; $w++) {
+        $launchErr = ''
+        $retried = $false
+        for ($w = 0; $w -lt 50; $w++) {
           Start-Sleep -Milliseconds 500
           if ($w % 4 -eq 3) { Update-ExamLearned }
           if (@(Get-ExamProcesses).Count -gt 0) { $ok = $true; break }
+          if ($w -ge 2 -and $w % 2 -eq 0 -and $launch.how -ne 'shell') {
+            $launchErr = Get-LaunchError (Get-TaskResult $launch.task)
+            if ($launchErr -and -not $retried) {
+              # cara langsung ditolak Windows: ulangi lewat shell (seperti klik dua kali)
+              $warn += ('Cara langsung gagal (' + $launchErr + '), dicoba lewat shell Windows.')
+              $retried = $true
+              $launchErr = ''
+              try { $launch = Start-ExamExe $exe $wd -Shell } catch { $launchErr = [string]$_.Exception.Message; break }
+            } elseif ($launchErr) { break }
+          }
         }
-        if ($ok) { Add-Result $jid 'ok' ('Exam Browser dibuka untuk ' + $u + ' (' + $exe + ').' + $note) }
-        else { Add-Result $jid 'ok' ('Perintah buka dikirim ke ' + $u + ' (proses belum terdeteksi, cek nama proses di panel).' + $note) }
+        if ($script:ExamElevate -and ((Test-UserAdmin $u) -eq $false)) {
+          $warn += ('Akun ' + $u + ' bukan Administrator, jendela UAC akan meminta kata sandi admin.')
+        }
+        $note = ''
+        if ($mode.Count) { $note = ' [' + ($mode -join ', ') + ']' }
+        if ($warn.Count) { $note += ' ' + ($warn -join ' ') }
+        if ($ok) {
+          Add-Result $jid 'ok' ('Exam Browser dibuka untuk ' + $u + ' (' + $exe + ').' + $note)
+        } else {
+          if ($launchErr) { $msg = 'Exam Browser gagal dibuka: ' + $launchErr + '. File: ' + $exe + '.' + $note }
+          else {
+            $msg = 'Exam Browser tidak terlihat berjalan 25 detik setelah dibuka untuk ' + $u + ' (' + $exe + ').' + $note
+            $rc = Get-TaskResult $launch.task
+            if ($launch.how -eq 'langsung' -and $null -ne $rc -and $rc -ne 267009 -and $rc -ne 267011) { $msg += ' Program langsung tertutup (kode keluar ' + $rc + ').' }
+          }
+          $lines = @(Read-RunLog $apLog 4)
+          if ($lines.Count) { $msg += "`nLog klik otomatis:`n" + ($lines -join "`n") }
+          $msg += "`nBila di layar siswa Exam Browser sebenarnya terbuka, jalankan #Cek Proses lalu isi Nama proses di Pustaka Skrip."
+          Add-Result $jid 'err' $msg
+        }
       }
       'close_exam' {
         Update-ExamLearned
@@ -653,15 +808,9 @@ function Invoke-Job($j) {
         # 1) cara resmi: tekan shortcut keluar Exam Browser (misalnya Ctrl+C+B+L) di layar siswa
         if ($script:ExamCloseKeys.Trim() -and $user) {
           try {
-            Update-Autopilot
-            $sysRoot = $env:SystemRoot
-            if (-not $sysRoot) { $sysRoot = 'C:\Windows' }
-            $ps = $sysRoot + '\System32\WindowsPowerShell\v1.0\powershell.exe'
-            $cmd = '"' + $ps + '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $AutopilotFile + '" -Mode close' +
-              ' -KeysB64 ' + (ConvertTo-B64 $script:ExamCloseKeys) + ' -RulesB64 ' + (ConvertTo-B64 '* > Yes/Ya/OK/Oke') +
-              ' -NamesB64 ' + (ConvertTo-B64 ($names -join ',')) + ' -Timeout 40'
-            $vbs = 'CreateObject("WScript.Shell").Run ' + (ConvertTo-Vbs $cmd) + ', 0, False'
-            [void](Invoke-AsUser $vbs 'close' -Elevated)
+            $dir = ''
+            if ($script:ExamDirDetect) { $dir = Get-ExamDir }
+            [void](Start-Autopilot @{ mode = 'close'; keys = $script:ExamCloseKeys; rules = '* > Yes/Ya/OK/Oke'; names = ($names -join ','); dir = $dir; timeout = 40 } 'close' -Quiet)
             for ($w = 0; $w -lt 40; $w++) {
               Start-Sleep -Milliseconds 500
               if (@(Get-ExamProcesses).Count -eq 0) { $how = 'shortcut ' + (($script:ExamCloseKeys -split "\r?\n" | Where-Object { $_.Trim() }) -join ' / '); break }
@@ -705,20 +854,24 @@ function Invoke-Job($j) {
         & shutdown.exe /r /f /t 5 /c "Komputer dimulai ulang oleh Proktor (ProktorLab)." | Out-Null
       }
       'logoff' {
-        $vbs = 'CreateObject("WScript.Shell").Run "shutdown.exe /l /f", 0, False'
-        $u = Invoke-AsUser $vbs 'logoff'
+        $u = Invoke-AsUser '' 'logoff' -Exe 'shutdown.exe' -Arguments '/l /f'
         Add-Result $jid 'ok' ('Log off dikirim ke ' + $u + '.')
       }
       'lock' {
-        $vbs = 'CreateObject("WScript.Shell").Run "rundll32.exe user32.dll,LockWorkStation", 0, False'
-        $u = Invoke-AsUser $vbs 'lock'
+        $u = Invoke-AsUser '' 'lock' -Exe 'rundll32.exe' -Arguments 'user32.dll,LockWorkStation'
         Add-Result $jid 'ok' ('Layar dikunci (' + $u + ').')
       }
       'message' {
         $text = [string]$p.text
         if (-not $text) { throw 'Isi pesan kosong.' }
-        $vbs = 'CreateObject("WScript.Shell").Popup ' + (ConvertTo-Vbs $text) + ', 0, "Pesan dari Proktor", 4160'
-        $u = Invoke-AsUser $vbs 'msg'
+        if (Test-Vbs) {
+          $vbs = 'CreateObject("WScript.Shell").Popup ' + (ConvertTo-Vbs $text) + ', 0, "Pesan dari Proktor", 4160'
+          $u = Invoke-AsUser $vbs 'msg'
+        } else {
+          # tanpa VBScript: pakai msg.exe bawaan Windows
+          $u = Get-LoggedUser
+          & msg.exe '*' '/TIME:0' $text 2>&1 | Out-Null
+        }
         Add-Result $jid 'ok' ('Pesan ditampilkan ke ' + $u + '.')
       }
       'list_procs' {
@@ -760,8 +913,7 @@ function Invoke-Job($j) {
       'open_url' {
         $url = [string]$p.url
         if ($url -notmatch '^https?://') { throw 'URL harus diawali http:// atau https://' }
-        $vbs = 'CreateObject("WScript.Shell").Run ' + (ConvertTo-Vbs $url) + ', 1, False'
-        $u = Invoke-AsUser $vbs 'url'
+        $u = Invoke-AsUser '' 'url' -Exe 'explorer.exe' -Arguments ('"' + $url + '"')
         Add-Result $jid 'ok' ('Situs dibuka untuk ' + $u + '.')
       }
       'update_agent' {

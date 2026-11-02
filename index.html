@@ -398,6 +398,11 @@ var PRESETS = {
   edge: { label: 'Microsoft Edge mode kiosk', path: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', args: '--kiosk https://cbt.sekolah.sch.id --edge-kiosk-type=fullscreen --no-first-run', proc: 'msedge' },
   custom: { label: 'Kustom (isi sendiri)', path: '', args: '', proc: '' }
 };
+function verLess(a, b) {
+  var x = String(a || '0').split('.'), y = String(b || '0').split('.');
+  for (var i = 0; i < 3; i++) { var d = (parseInt(x[i], 10) || 0) - (parseInt(y[i], 10) || 0); if (d) return d < 0; }
+  return false;
+}
 function pathLines(t) {
   return String(t || '').split(/\r?\n|\|/).map(function (x) { return x.trim().replace(/^"|"$/g, ''); }).filter(Boolean);
 }
@@ -735,7 +740,7 @@ var Demo = (function () {
         if (!user) return setRow(job, epId, 'Gagal', noUser);
         return setRow(job, epId, 'Berhasil', 'Situs dibuka untuk ' + user + '.');
       case 'update_agent':
-        e.ver = '1.4.0'; return setRow(job, epId, 'Berhasil', 'Agen diperbarui, memulai ulang agen...');
+        e.ver = '1.5.0'; return setRow(job, epId, 'Berhasil', 'Agen diperbarui, memulai ulang agen...');
       case 'list_procs': {
         var exd = demoExam(e);
         var lines = ['Pengguna: ' + (user || '-') + '. Folder Exam Browser: ' + (exd.path ? exd.path.replace(/\\[^\\]+$/, '') : '-') + '. Nama proses dikenali: SafeExamBrowser*, runningexam.'];
@@ -1277,9 +1282,10 @@ VIEWS.dash = {
     var stats = $('#d-stats');
     if (!stats) return;
     var miss = on.filter(function (e) { return e.examOk === false; });
+    var oldAg = on.filter(function (e) { return e.ver && S.version && verLess(e.ver, S.version); });
     var al = $('#d-alert');
     if (al) {
-      var sig = miss.map(function (e) { return e.id; }).join(',');
+      var sig = miss.map(function (e) { return e.id; }).join(',') + '|' + oldAg.map(function (e) { return e.id; }).join(',');
       if (al.getAttribute('data-sig') !== sig) {
         al.setAttribute('data-sig', sig);
         al.innerHTML = miss.length ? '<div class="box warn" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' + icon('alert') +
@@ -1287,6 +1293,10 @@ VIEWS.dash = {
           esc(miss.slice(0, 12).map(function (e) { return e.name; }).join(', ')) + (miss.length > 12 ? ', …' : '') +
           '<div class="muted" style="font-size:13px">Lokasi file di komputer tersebut berbeda. Atur lokasi khususnya agar #Run ExamBrowser berhasil.</div></div>' +
           '<button class="btn sm" data-act="show-missing">Atur lokasi</button></div>' : '';
+        if (oldAg.length) al.innerHTML += '<div class="box warn" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap' + (miss.length ? ';margin-top:10px' : '') + '">' + icon('alert') +
+          '<div style="flex:1;min-width:220px"><b>' + oldAg.length + ' komputer masih memakai agen versi lama:</b> ' +
+          esc(oldAg.slice(0, 12).map(function (e) { return e.name + ' (v' + e.ver + ')'; }).join(', ')) + (oldAg.length > 12 ? ', …' : '') +
+          '<div class="muted" style="font-size:13px">Jalankan #Perbarui Agen ke komputer tersebut agar perbaikan terbaru (v' + esc(S.version) + ') ikut terpakai.</div></div></div>';
       }
     }
     stats.innerHTML =

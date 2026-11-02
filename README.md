@@ -114,7 +114,9 @@ Menu **Pustaka Skrip → Konfigurasi Exam Browser**. Pilih preset (Safe Exam Bro
   Persetujuan* > Yes/Ya           "Persetujuan Merekam Aktifitas Saat Ujian"
   ```
 
-  Format: `Judul jendela > Tombol`, `*` = jendela Exam Browser mana saja, `/` memisahkan pilihan tombol, baris diawali `#` diabaikan. Setiap tombol diklik sekali per jendela. Hapus baris *Persetujuan* jika sekolah ingin siswa menyetujui perekaman sendiri. Log klik ada di `%TEMP%\ProktorLab-autopilot.log` pada akun siswa.
+  Format: `Judul jendela > Tombol`, `*` = jendela Exam Browser mana saja, `/` memisahkan pilihan tombol, baris diawali `#` diabaikan. Setiap tombol diklik sekali per jendela. Hapus baris *Persetujuan* jika sekolah ingin siswa menyetujui perekaman sendiri. Log klik disimpan di `C:\ProgramData\ProktorLab\run\PL-klik-*.log` dan ikut ditampilkan di Riwayat bila pembukaan gagal.
+
+**Cara agen membuka Exam Browser (v1.5.0):** klik otomatis disiapkan lebih dulu, lalu Exam Browser dibuka terpisah di akun siswa (folder kerja = folder Exam Browser, prioritas normal), jadi Exam Browser tetap terbuka walaupun klik otomatis bermasalah. Bila *Jalankan sebagai Administrator* aktif, file .exe dijalankan **langsung oleh Task Scheduler** dengan hak tertinggi; jika Windows menolaknya (misalnya akun bukan Administrator), agen mengulang lewat shell Windows seperti klik dua kali. Tanpa opsi itu, Exam Browser dibuka lewat shell Windows. Agen menunggu hingga 25 detik; jika Exam Browser tidak terlihat berjalan, status di Riwayat menjadi **Gagal** beserta penyebabnya (kode Windows, log klik otomatis), bukan *Berhasil* palsu.
 
 **Saat Exam Browser ditutup** (#Close ExamBrowser):
 
@@ -146,7 +148,7 @@ Urutan yang dicoba agen: lokasi khusus komputer itu → daftar lokasi umum → p
 | Skrip | Fungsi |
 |---|---|
 | #Run ExamBrowser | Membuka Exam Browser di akun yang sedang login |
-| #Close ExamBrowser | Menutup paksa semua proses Exam Browser |
+| #Close ExamBrowser | Menutup Exam Browser dengan shortcut keluarnya, cadangan: hentikan paksa |
 | #Power ON (Wake On Lan) | Menyalakan komputer yang mati lewat komputer lain yang online |
 | #Shutdown / #Restart | `shutdown.exe /s` atau `/r /f /t 5` |
 | #Log Off / #Kunci Layar | Keluar dari akun / kunci layar |
@@ -168,7 +170,7 @@ Demi keamanan, panel hanya bisa menjalankan skrip di atas (tidak ada skrip bebas
 
 - **Frontend**: edit file di repo ini, GitHub Pages memperbarui otomatis.
 - **Backend**: tempel kode baru di Apps Script, simpan, lalu **Terapkan → Kelola deployment → ikon pensil → Versi baru → Terapkan**. URL tetap sama, agen tidak perlu dipasang ulang.
-- **Agen**: setelah backend diperbarui, jalankan skrip **#Perbarui Agen** ke semua endpoint. Kolom *Lokasi Exam* menampilkan **Perbarui agen** untuk komputer yang agennya masih versi lama (agen lama hanya memakai lokasi pertama).
+- **Agen**: setelah backend diperbarui, jalankan skrip **#Perbarui Agen** ke semua endpoint. Dashboard menampilkan peringatan berisi daftar komputer yang agennya masih lebih lama dari versi backend.
 - Jika mengubah file di `agent/`, buat ulang `apps-script/Agen.gs` dengan `python3 tools/make_agen.py`.
 
 ## Mencopot agen

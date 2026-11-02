@@ -1,19 +1,20 @@
-# ProktorLab Autopilot 1.3.0
+# ProktorLab Autopilot 1.4.0
 # ---------------------------------------------------------------
 # Dijalankan oleh agen ProktorLab di sesi Windows pengguna yang login.
 #
-#   -Mode open  : membuka Exam Browser lalu mengklik otomatis tombol di
-#                 jendela pembukanya (OK, RUN, Yes, ...) sesuai aturan.
+#   -Mode open  : (opsional) membuka Exam Browser, lalu mengklik otomatis
+#                 tombol di jendela pembukanya (OK, RUN, Yes, ...).
 #   -Mode close : menutup Exam Browser dengan shortcut keluar resminya
 #                 (misalnya Ctrl+C+B+L), lalu mengklik konfirmasi Yes/OK.
 #
+# Pengaturan dibaca dari file -Job (JSON) yang dibuat agen.
 # Format aturan klik (satu per baris):   Judul jendela > Tombol1/Tombol2
 #   *  = judul apa saja (hanya jendela milik Exam Browser)
 #   Setiap tombol diklik sekali per jendela.
 # Format shortcut (satu per baris): Ctrl+C+B+L   (dicoba berurutan)
-# Log: %TEMP%\ProktorLab-autopilot.log
 # ---------------------------------------------------------------
 param(
+  [string]$Job = '',
   [string]$Mode = 'open',
   [string]$ExeB64 = '',
   [string]$ArgsB64 = '',
@@ -33,11 +34,38 @@ $Exe = From-B64 $ExeB64
 $ExeArgs = From-B64 $ArgsB64
 $RulesText = From-B64 $RulesB64
 $KeysText = From-B64 $KeysB64
-$Names = @((From-B64 $NamesB64) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-$LogFile = Join-Path $env:TEMP 'ProktorLab-autopilot.log'
+$NamesText = From-B64 $NamesB64
+$Dir = ''
+$LogFile = ''
+$JobErr = ''
+if ($Job) {
+  try {
+    $J = Get-Content -LiteralPath $Job -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+    if ($J.mode) { $Mode = [string]$J.mode }
+    $Exe = [string]$J.exe
+    $ExeArgs = [string]$J.args
+    $RulesText = [string]$J.rules
+    $KeysText = [string]$J.keys
+    $NamesText = [string]$J.names
+    $Dir = [string]$J.dir
+    $LogFile = [string]$J.log
+    if ($J.timeout) { $Timeout = [int]$J.timeout }
+  } catch { $JobErr = 'File tugas tidak terbaca: ' + $_.Exception.Message }
+}
+$Names = @($NamesText -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$DirPrefix = ''
+if ($Dir) { if ($Dir.Contains('/') -and -not $Dir.Contains('\')) { $DirPrefix = $Dir.TrimEnd('/') + '/' } else { $DirPrefix = $Dir.TrimEnd('\') + '\' } }
+# log: file dari agen (bisa dibaca panel); cadangan %TEMP%
+$LogOk = $false
+if ($LogFile) { try { [IO.File]::AppendAllText($LogFile, ''); $LogOk = $true } catch {} }
+if (-not $LogOk) {
+  $LogFile = ''
+  if ($env:TEMP) { $LogFile = Join-Path $env:TEMP 'ProktorLab-autopilot.log' }
+}
 
 function Write-AutoLog([string]$m) {
-  try { Add-Content -Path $LogFile -Value ((Get-Date -Format 'HH:mm:ss') + '  [' + $Mode + '] ' + $m) } catch {}
+  if (-not $LogFile) { return }
+  try { Add-Content -LiteralPath $LogFile -Value ((Get-Date -Format 'HH:mm:ss') + '  [' + $Mode + '] ' + $m) -Encoding UTF8 } catch {}
 }
 
 function Read-Rules([string]$text) {
@@ -102,10 +130,13 @@ function Read-Combos([string]$text) {
 function Get-ExamTree([int]$rootId) {
   $set = @{}
   if ($rootId -gt 0) { $set[$rootId] = $true }
-  $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name -ErrorAction SilentlyContinue)
+  $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath -ErrorAction SilentlyContinue)
   foreach ($p in $all) {
     $n = ([string]$p.Name) -replace '\.exe$', ''
+    if ([int]$p.ProcessId -eq $PID) { continue }
     foreach ($pat in $Names) { if ($n -like $pat) { $set[[int]$p.ProcessId] = $true } }
+    $path = [string]$p.ExecutablePath
+    if ($DirPrefix -and $path -and $path.StartsWith($DirPrefix, [StringComparison]::OrdinalIgnoreCase)) { $set[[int]$p.ProcessId] = $true }
   }
   $changed = $true
   while ($changed) {
@@ -121,16 +152,40 @@ function Get-ExamTree([int]$rootId) {
 
 # ---------------- mulai ----------------
 if ($MyInvocation.InvocationName -eq '.') { return }   # dimuat untuk pengujian
-if ($Mode -eq 'open') { try { Remove-Item -LiteralPath $LogFile -Force -ErrorAction SilentlyContinue } catch {} }
+if ($Mode -eq 'open' -and -not $Job) { try { Remove-Item -LiteralPath $LogFile -Force -ErrorAction SilentlyContinue } catch {} }
+if ($JobErr) { Write-AutoLog $JobErr; exit 1 }
 $Rules = Read-Rules $RulesText
-Write-AutoLog ('Mulai. Exe: ' + $Exe + ' | Proses: ' + ($Names -join ',') + ' | Aturan: ' + (($Rules | ForEach-Object { $_.title + ' > ' + ($_.btns -join '/') }) -join ' ; '))
+$Admin = '?'
+try { $Admin = [string]([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch {}
+Write-AutoLog ('Mulai (PID ' + $PID + ', admin: ' + $Admin + '). Proses: ' + ($Names -join ',') + ' | Folder: ' + $Dir + ' | Aturan: ' + (($Rules | ForEach-Object { $_.title + ' > ' + ($_.btns -join '/') }) -join ' ; '))
 
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-Add-Type -AssemblyName System.Windows.Forms
+# buka Exam Browser lebih dulu (bila diminta), baru siapkan UI Automation
+$RootId = 0
+if ($Mode -eq 'open' -and $Exe) {
+  try {
+    $sp = @{ FilePath = $Exe; PassThru = $true; WorkingDirectory = (Split-Path -Parent $Exe) }
+    if ($ExeArgs) { $sp.ArgumentList = $ExeArgs }
+    $proc = Start-Process @sp -ErrorAction Stop
+    $RootId = $proc.Id
+    Write-AutoLog ('Exam Browser dibuka, PID ' + $RootId)
+  } catch {
+    Write-AutoLog ('Gagal membuka Exam Browser: ' + $_.Exception.Message)
+    exit 1
+  }
+}
+if ($Mode -eq 'open' -and $Rules.Count -eq 0) { Write-AutoLog 'Tidak ada aturan klik.'; exit 0 }
+
+try {
+  Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
+  Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
+} catch {
+  Write-AutoLog ('UI Automation tidak tersedia, klik otomatis dilewati: ' + $_.Exception.Message)
+  exit 0
+}
+try { Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop } catch {}
 $NativeOk = $true
 try {
-  Add-Type -Namespace ProktorLab -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, int flags, int extra); [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);'
+  Add-Type -Namespace ProktorLab -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, int flags, int extra); [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);' -ErrorAction Stop
 } catch { $NativeOk = $false }
 
 $AE = [System.Windows.Automation.AutomationElement]
@@ -256,30 +311,23 @@ if ($Mode -eq 'close') {
 }
 
 # ================= MODE OPEN =================
-$RootId = 0
-if ($Exe) {
-  try {
-    $sp = @{ FilePath = $Exe; PassThru = $true; WorkingDirectory = (Split-Path -Parent $Exe) }
-    if ($ExeArgs) { $sp.ArgumentList = $ExeArgs }
-    $proc = Start-Process @sp -ErrorAction Stop
-    $RootId = $proc.Id
-    Write-AutoLog ('Exam Browser dibuka, PID ' + $RootId)
-  } catch {
-    Write-AutoLog ('Gagal membuka Exam Browser: ' + $_.Exception.Message)
-    exit 1
-  }
-}
-if ($Rules.Count -eq 0) { Write-AutoLog 'Tidak ada aturan klik.'; exit 0 }
-
+# Exam Browser dibuka oleh agen (atau di atas); di sini hanya mengklik tombol
+# jendela pembukanya sampai semua aturan berjudul khusus selesai.
 $Tree = @{}
 $TreeAt = [datetime]::MinValue
 $Deadline = (Get-Date).AddSeconds($Timeout)
+$SeenExam = $false
 while ((Get-Date) -lt $Deadline) {
-  if (((Get-Date) - $TreeAt).TotalMilliseconds -gt 1500) { $Tree = Get-ExamTree $RootId; $TreeAt = Get-Date }
+  if (((Get-Date) - $TreeAt).TotalMilliseconds -gt 1500) {
+    $Tree = Get-ExamTree $RootId
+    $TreeAt = Get-Date
+    if ($Tree.Count -gt 0 -and -not $SeenExam) { $SeenExam = $true; Write-AutoLog ('Proses Exam Browser terlihat (' + $Tree.Count + ').') }
+  }
   Invoke-RulesPass $Tree
   # selesai jika semua aturan berjudul khusus sudah diklik dan 8 detik tidak ada klik baru
   $specific = @($Rules | Where-Object { $_.title -ne '*' })
   if ($specific.Count -gt 0 -and @($specific | Where-Object { -not $_.fired }).Count -eq 0 -and ((Get-Date) - $LastClick).TotalSeconds -gt 8) { break }
   Start-Sleep -Milliseconds 400
 }
+if (-not $SeenExam) { Write-AutoLog 'Proses Exam Browser tidak terlihat selama klik otomatis berjalan.' }
 Write-AutoLog 'Selesai.'
