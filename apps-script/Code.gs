@@ -17,7 +17,7 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.5.0';
+var APP_VERSION = '1.5.1';
 
 var SHEETS = {
   EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
@@ -223,12 +223,19 @@ function handleApi_(req) {
   throw new Error('Aksi tidak dikenal: ' + a);
 }
 
+/** Versi agen yang disediakan backend ini (dibaca dari Agen.gs), untuk peringatan "agen versi lama". */
+function agentVersion_() {
+  var m = String(AGENT_PS1).match(/\$AgentVersion = '([^']+)'/);
+  return m ? m[1] : APP_VERSION;
+}
+
 function boot_() {
   var s = settings_();
   var url = ScriptApp.getService().getUrl();
   var key = getKey_();
   return {
     version: APP_VERSION,
+    agentVersion: agentVersion_(),
     settings: s,
     groups: groupsList_(s),
     endpoints: endpointsView_(),
@@ -379,10 +386,14 @@ function ensureEndpoint_(id, b, s) {
     var sh = sheet_(SHEETS.EP);
     if (!ep) {
       var group = str_(b.grp, 60) || s.defaultGroup || NEW_GROUP;
-      sh.appendRow([id, id, group, '', info.user, info.ip, info.mac, info.bc, info.os, info.ver, new Date(), new Date(), '']);
+      var r = sh.getLastRow() + 1;
+      if (r > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), 20);
+      epTextFormat_(sh, r, 1);
+      sh.getRange(r, 1, 1, 13).setValues([[id, id, group, '', info.user, info.ip, info.mac, info.bc, info.os, info.ver, new Date(), new Date(), '']]);
       var s2 = settings_();
       if (s2.groups.indexOf(group) < 0) { s2.groups.push(group); setJson_('settings', s2); }
     } else {
+      epTextFormat_(sh, ep.row, 1);
       sh.getRange(ep.row, 5, 1, 6).setValues([[
         info.user || ep.user, info.ip || ep.ip, info.mac || ep.mac, info.bc || ep.bc, info.os || ep.os, info.ver || ep.ver
       ]]);
@@ -684,7 +695,7 @@ function endpointsView_() {
     return {
       id: id, name: e.name, group: e.group, comment: e.comment,
       user: online ? (h.user || '') : e.user, loggedIn: online && !!h.user,
-      ip: e.ip, mac: e.mac, os: e.os, ver: e.ver,
+      ip: e.ip, mac: e.mac, os: e.os, ver: (h && h.ver) || e.ver,
       online: online, exam: online && !!h.exam,
       seen: h ? h.t : e.seen, reg: e.reg,
       examOverride: e.examOverride,
@@ -732,8 +743,8 @@ function moveEndpoints_(ids, group) {
   [].concat(ids || []).forEach(function (i) { set[normId_(i)] = 1; });
   withEpSheet_(function (sh, values) {
     if (!values.length) return;
-    var col = values.map(function (r) { return [set[String(r[0])] ? group : r[2]]; });
-    sh.getRange(2, 3, col.length, 1).setValues(col);
+    var col = values.map(function (r) { return [set[String(r[0])] ? group : cellText_(r[2])]; });
+    sh.getRange(2, 3, col.length, 1).setNumberFormat('@').setValues(col);
   });
   var s = settings_();
   if (s.groups.indexOf(group) < 0) { s.groups.push(group); setJson_('settings', s); }
@@ -744,7 +755,7 @@ function setComment_(id, comment) {
   id = normId_(id);
   withEpSheet_(function (sh, values) {
     for (var i = 0; i < values.length; i++) {
-      if (String(values[i][0]) === id) { sh.getRange(i + 2, 4).setValue(str_(comment, 120)); return; }
+      if (String(values[i][0]) === id) { sh.getRange(i + 2, 4).setNumberFormat('@').setValue(str_(comment, 120)); return; }
     }
   });
   return { ok: true };
@@ -757,8 +768,8 @@ function setExamPath_(ids, path) {
   ensureEpHeader_();
   withEpSheet_(function (sh, values) {
     if (!values.length) return;
-    sh.getRange(2, 13, values.length, 1).setValues(values.map(function (r) {
-      return [set[String(r[0])] ? path : (r[12] || '')];
+    sh.getRange(2, 13, values.length, 1).setNumberFormat('@').setValues(values.map(function (r) {
+      return [set[String(r[0])] ? path : cellText_(r[12])];
     }));
   });
   return { ok: true };
@@ -800,7 +811,7 @@ function renameGroup_(from, to) {
   if (from === NEW_GROUP) throw new Error('Grup "' + NEW_GROUP + '" tidak bisa diganti namanya.');
   withEpSheet_(function (sh, values) {
     if (!values.length) return;
-    sh.getRange(2, 3, values.length, 1).setValues(values.map(function (r) { return [String(r[2]) === from ? to : r[2]]; }));
+    sh.getRange(2, 3, values.length, 1).setNumberFormat('@').setValues(values.map(function (r) { return [cellText_(r[2]) === from ? to : cellText_(r[2])]; }));
   });
   var s = settings_();
   s.groups = s.groups.map(function (g) { return g === from ? to : g; });
@@ -815,7 +826,7 @@ function deleteGroup_(name) {
   if (name === NEW_GROUP) throw new Error('Grup "' + NEW_GROUP + '" tidak bisa dihapus.');
   withEpSheet_(function (sh, values) {
     if (!values.length) return;
-    sh.getRange(2, 3, values.length, 1).setValues(values.map(function (r) { return [String(r[2]) === name ? NEW_GROUP : r[2]]; }));
+    sh.getRange(2, 3, values.length, 1).setNumberFormat('@').setValues(values.map(function (r) { return [cellText_(r[2]) === name ? NEW_GROUP : cellText_(r[2])]; }));
   });
   var s = settings_();
   s.groups = s.groups.filter(function (g) { return g !== name; });
@@ -947,27 +958,86 @@ function qSet_(id, q) {
 }
 
 function epMap_() {
-  var c = cache_().get('ep_map');
+  var c = cache_().get(EP_CACHE);
   if (c) { try { return JSON.parse(c); } catch (e) {} }
   var sh = sheet_(SHEETS.EP);
   var n = sh.getLastRow();
   var map = {};
+  var repair = [];
   if (n > 1) {
     sh.getRange(2, 1, n - 1, SHEETS.EP.head.length).getValues().forEach(function (r, i) {
       if (!r[0]) return;
-      map[String(r[0])] = {
-        row: i + 2, id: String(r[0]), name: String(r[1] || r[0]), group: String(r[2] || NEW_GROUP),
-        comment: String(r[3] || ''), user: String(r[4] || ''), ip: String(r[5] || ''), mac: String(r[6] || ''),
-        bc: String(r[7] || ''), os: String(r[8] || ''), ver: String(r[9] || ''), reg: ms_(r[10]), seen: ms_(r[11]),
-        examOverride: String(r[12] || '')
+      var e = {
+        row: i + 2, id: cellText_(r[0]), name: cellText_(r[1] || r[0]), group: cellText_(r[2] || NEW_GROUP),
+        comment: cellText_(r[3]), user: cellText_(r[4]), ip: ipText_(r[5]), mac: cellText_(r[6]),
+        bc: ipText_(r[7]), os: cellText_(r[8]), ver: verText_(r[9]), reg: ms_(r[10]), seen: ms_(r[11]),
+        examOverride: cellText_(r[12])
       };
+      map[e.id] = e;
+      // sel yang telanjur diubah Google Sheets jadi tanggal/angka -> tulis ulang sebagai teks
+      for (var k = 1; k <= 9; k++) { if (r[k] !== '' && typeof r[k] !== 'string') { repair.push(e); break; } }
     });
   }
-  try { cache_().put('ep_map', JSON.stringify(map), 600); } catch (e) {}
+  if (repair.length) repairEpRows_(sh, n, repair);
+  try { cache_().put(EP_CACHE, JSON.stringify(map), 600); } catch (e) {}
   return map;
 }
 
-function epInvalidate_() { cache_().remove('ep_map'); }
+function epInvalidate_() { cache_().remove(EP_CACHE); }
+
+/*
+ * Google Sheets berlokal Indonesia mengubah teks secara otomatis:
+ *   "1.5.0"           -> tanggal 1 Mei 2000   (versi agen)
+ *   "192.168.100.255" -> angka 192168100255   (titik dianggap pemisah ribuan)
+ * Karena itu kolom teks sheet Endpoint diberi format "teks biasa" (@)
+ * sebelum ditulis, dan data lama yang telanjur berubah dikembalikan.
+ */
+var EP_CACHE = 'ep_map2';
+var EP_TEXT_COLS = [[1, 10], [13, 1]];   // kolom A-J dan M
+
+function epTextFormat_(sh, row, count) {
+  EP_TEXT_COLS.forEach(function (c) { sh.getRange(row, c[0], count, c[1]).setNumberFormat('@'); });
+}
+
+function repairEpRows_(sh, lastRow, list) {
+  try {
+    epTextFormat_(sh, 2, lastRow - 1);
+    list.forEach(function (e) {
+      sh.getRange(e.row, 2, 1, 9).setValues([[e.name, e.group, e.comment, e.user, e.ip, e.mac, e.bc, e.os, e.ver]]);
+    });
+  } catch (err) {}
+}
+
+function isDate_(v) { return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime()); }
+
+function sheetTz_() {
+  try { return ss_().getSpreadsheetTimeZone() || settings_().tz || 'Asia/Jakarta'; } catch (e) { return settings_().tz || 'Asia/Jakarta'; }
+}
+
+function cellText_(v) {
+  if (v == null) return '';
+  if (isDate_(v)) return Utilities.formatDate(v, sheetTz_(), 'd/M/yyyy');
+  return String(v);
+}
+
+/** Versi agen yang telanjur jadi tanggal (1.5.0 -> 1 Mei 2000) dikembalikan ke teks versi. */
+function verText_(v) {
+  if (!isDate_(v)) return cellText_(v).trim();
+  var p = Utilities.formatDate(v, sheetTz_(), 'd-M-yyyy').split('-').map(Number);
+  var d = p[0], m = p[1];
+  var loc = '';
+  try { loc = String(ss_().getSpreadsheetLocale() || ''); } catch (e) {}
+  if (/^en_(US|PH|CA)/.test(loc)) { var t = d; d = m; m = t; }   // lokal bulan/tanggal
+  return d + '.' + m + '.' + (p[2] % 100);
+}
+
+/** IP yang telanjur jadi angka (192168100255) dikembalikan ke 192.168.100.255. */
+function ipText_(v) {
+  if (typeof v === 'number' && isFinite(v) && v >= 1000 && Math.floor(v) === v) {
+    return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+  return cellText_(v).trim();
+}
 
 function heartbeats_(ids) {
   var out = {};

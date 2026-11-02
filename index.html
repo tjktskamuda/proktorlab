@@ -399,7 +399,10 @@ var PRESETS = {
   custom: { label: 'Kustom (isi sendiri)', path: '', args: '', proc: '' }
 };
 function verLess(a, b) {
-  var x = String(a || '0').split('.'), y = String(b || '0').split('.');
+  // hanya bandingkan nomor versi yang valid (mis. 1.5.0); data lain tidak dianggap versi lama
+  a = String(a || '').trim(); b = String(b || '').trim();
+  if (!/^\d+(\.\d+){0,3}$/.test(a) || !/^\d+(\.\d+){0,3}$/.test(b)) return false;
+  var x = a.split('.'), y = b.split('.');
   for (var i = 0; i < 3; i++) { var d = (parseInt(x[i], 10) || 0) - (parseInt(y[i], 10) || 0); if (d) return d < 0; }
   return false;
 }
@@ -1016,7 +1019,7 @@ function boot() {
   call('boot').then(function (b) {
     S.offset = b.now - Date.now();
     S.settings = b.settings; S.groups = b.groups; S.endpoints = b.endpoints; S.layar = b.layar;
-    S.url = b.url; S.key = b.key; S.installUrl = b.installUrl; S.version = b.version;
+    S.url = b.url; S.key = b.key; S.installUrl = b.installUrl; S.version = b.version; S.agentVersion = b.agentVersion || b.version;
     var last = lsGet('pl_view', null);
     if (last && last.name && last.name !== 'job' && VIEWS[last.name]) S.view = last;
     renderShell();
@@ -1282,7 +1285,7 @@ VIEWS.dash = {
     var stats = $('#d-stats');
     if (!stats) return;
     var miss = on.filter(function (e) { return e.examOk === false; });
-    var oldAg = on.filter(function (e) { return e.ver && S.version && verLess(e.ver, S.version); });
+    var oldAg = on.filter(function (e) { return e.ver && S.agentVersion && verLess(e.ver, S.agentVersion); });
     var al = $('#d-alert');
     if (al) {
       var sig = miss.map(function (e) { return e.id; }).join(',') + '|' + oldAg.map(function (e) { return e.id; }).join(',');
@@ -1296,7 +1299,7 @@ VIEWS.dash = {
         if (oldAg.length) al.innerHTML += '<div class="box warn" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap' + (miss.length ? ';margin-top:10px' : '') + '">' + icon('alert') +
           '<div style="flex:1;min-width:220px"><b>' + oldAg.length + ' komputer masih memakai agen versi lama:</b> ' +
           esc(oldAg.slice(0, 12).map(function (e) { return e.name + ' (v' + e.ver + ')'; }).join(', ')) + (oldAg.length > 12 ? ', …' : '') +
-          '<div class="muted" style="font-size:13px">Jalankan #Perbarui Agen ke komputer tersebut agar perbaikan terbaru (v' + esc(S.version) + ') ikut terpakai.</div></div></div>';
+          '<div class="muted" style="font-size:13px">Jalankan #Perbarui Agen ke komputer tersebut agar memakai agen terbaru (v' + esc(S.agentVersion) + ').</div></div></div>';
       }
     }
     stats.innerHTML =

@@ -170,7 +170,7 @@ Demi keamanan, panel hanya bisa menjalankan skrip di atas (tidak ada skrip bebas
 
 - **Frontend**: edit file di repo ini, GitHub Pages memperbarui otomatis.
 - **Backend**: tempel kode baru di Apps Script, simpan, lalu **Terapkan → Kelola deployment → ikon pensil → Versi baru → Terapkan**. URL tetap sama, agen tidak perlu dipasang ulang.
-- **Agen**: setelah backend diperbarui, jalankan skrip **#Perbarui Agen** ke semua endpoint. Dashboard menampilkan peringatan berisi daftar komputer yang agennya masih lebih lama dari versi backend.
+- **Agen**: setelah backend diperbarui, jalankan skrip **#Perbarui Agen** ke semua endpoint. Dashboard menampilkan peringatan berisi daftar komputer yang agennya lebih lama dari agen yang tersedia di backend (`$AgentVersion` di Agen.gs). Pembaruan yang hanya mengubah backend/panel tidak memunculkan peringatan ini.
 - Jika mengubah file di `agent/`, buat ulang `apps-script/Agen.gs` dengan `python3 tools/make_agen.py`.
 
 ## Mencopot agen
@@ -182,6 +182,7 @@ Jalankan perintah *Mencopot agen* dari menu **Pasang Agen** di PowerShell (Admin
 - Laporan rutin agen hanya membaca cache Apps Script agar hemat kuota. Jika memasang agen di banyak lab sekaligus dan muncul pesan kuota, naikkan interval di **Pengaturan** menjadi 15–20 detik.
 - *Sekarang* berarti tiap komputer menjalankan perintah pada laporan berikutnya (selisih hingga ±10 detik). Pakai *Pada waktu tertentu* untuk start yang benar-benar serentak.
 - Data login admin disimpan sebagai hash di Script Properties; sesi login berlaku 6 jam sejak aktivitas terakhir.
+- Google Sheets berlokal Indonesia mengubah teks secara otomatis (`1.5.0` menjadi tanggal 1 Mei 2000, `192.168.100.255` menjadi angka karena titik dianggap pemisah ribuan). Karena itu kolom teks sheet `Endpoint` (A–J dan M) disimpan berformat *teks biasa*, dan data lama yang telanjur berubah diperbaiki otomatis oleh backend v1.5.1.
 
 ## Uji coba lokal
 

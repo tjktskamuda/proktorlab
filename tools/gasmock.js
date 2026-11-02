@@ -12,6 +12,26 @@ const SRC = path.join(__dirname, '..', 'apps-script');
 const PORT = Number(process.argv[2] || 8787);
 
 // ---------- Spreadsheet ----------
+// Meniru Google Sheets berlokal Indonesia: teks yang ditulis ke sel berformat
+// otomatis diubah jadi tanggal/angka ("1.5.0" -> 1 Mei 2000, "192.168.100.255"
+// -> 192168100255), kecuali selnya berformat teks biasa ('@').
+const stats0 = { epWrites: 0 };
+function coerce(sheet, row, col, v) {
+  if (typeof v !== 'string') return v;
+  if (sheet.fmt[row + ':' + col] === '@') return v;
+  const s = v.trim();
+  const m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{1,4})$/);
+  if (m) {
+    const d = +m[1], mo = +m[2];
+    let y = +m[3];
+    if (m[3].length <= 2) y += y < 30 ? 2000 : 1900;
+    const dt = new Date(y, mo - 1, d);
+    if (mo >= 1 && mo <= 12 && d >= 1 && dt.getMonth() === mo - 1) return dt;
+  }
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ''));
+  if (/^-?\d{1,14}$/.test(s)) return Number(s);
+  return v;
+}
 function colToNum(c) { let n = 0; for (const ch of c) n = n * 26 + (ch.charCodeAt(0) - 64); return n; }
 class Range {
   constructor(sheet, r, c, nr, nc) { Object.assign(this, { sheet, r, c, nr, nc }); }
@@ -31,8 +51,13 @@ class Range {
     for (let i = 0; i < this.nr; i++) {
       const ri = this.r - 1 + i;
       while (this.sheet.data.length <= ri) this.sheet.data.push([]);
-      for (let j = 0; j < this.nc; j++) this.sheet.data[ri][this.c - 1 + j] = v[i][j];
+      for (let j = 0; j < this.nc; j++) this.sheet.data[ri][this.c - 1 + j] = coerce(this.sheet, ri + 1, this.c + j, v[i][j]);
     }
+    if (this.sheet.name === 'Endpoint') stats0.epWrites++;
+    return this;
+  }
+  setNumberFormat(f) {
+    for (let i = 0; i < this.nr; i++) for (let j = 0; j < this.nc; j++) this.sheet.fmt[(this.r + i) + ':' + (this.c + j)] = f;
     return this;
   }
   setValue(v) { return this.setValues([[v]]); }
@@ -54,14 +79,21 @@ class Range {
   }
 }
 class Sheet {
-  constructor(name) { this.name = name; this.data = []; }
+  constructor(name) { this.name = name; this.data = []; this.fmt = {}; }
   getLastRow() { let n = this.data.length; while (n > 0 && (!this.data[n - 1] || this.data[n - 1].every(v => v === '' || v === undefined))) n--; return n; }
   getRange(a, b, c, d) {
     if (typeof a === 'string') { const m = a.match(/^([A-Z]+):([A-Z]+)$/); const c1 = colToNum(m[1]); return new Range(this, 1, c1, Math.max(this.getLastRow(), 1), colToNum(m[2]) - c1 + 1); }
     if (a < 1 || b < 1) throw new Error('range out of bounds');
     return new Range(this, a, b, c || 1, d || 1);
   }
-  appendRow(row) { const n = this.getLastRow(); this.data.length = n; this.data.push(row.slice()); return this; }
+  appendRow(row) {
+    const n = this.getLastRow(); this.data.length = n;
+    this.data.push(row.map((v, j) => coerce(this, n + 1, j + 1, v)));
+    if (this.name === 'Endpoint') stats0.epWrites++;
+    return this;
+  }
+  getMaxRows() { return Math.max(this.maxRows || 0, this.data.length); }
+  insertRowsAfter(after, n) { this.maxRows = this.getMaxRows() + n; this.inserted = (this.inserted || 0) + n; }
   deleteRows(start, n) { this.data.splice(start - 1, n); }
   deleteRow(r) { this.data.splice(r - 1, 1); }
   setFrozenRows() {}
@@ -70,6 +102,8 @@ const sheets = {};
 const ss = {
   getSheetByName: n => sheets[n] || null,
   insertSheet: n => (sheets[n] = new Sheet(n)),
+  getSpreadsheetTimeZone: () => 'Asia/Makassar',
+  getSpreadsheetLocale: () => 'in_ID',
 };
 
 // ---------- Properties / Cache / Lock ----------
@@ -99,9 +133,13 @@ const Utilities = {
   computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
   base64Encode: bytes => Buffer.from(bytes.map(b => (b < 0 ? b + 256 : b))).toString('base64'),
   formatDate: (d, tz, fmt) => {
+    const parts = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: tz || 'UTC', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false })
+      .formatToParts(d).forEach(x => { parts[x.type] = x.value; });
     const p = n => String(n).padStart(2, '0');
-    return fmt.replace('yy', String(d.getFullYear()).slice(2)).replace('MM', p(d.getMonth() + 1)).replace('dd', p(d.getDate()))
-      .replace('HH', p(d.getHours())).replace('mm', p(d.getMinutes())).replace('ss', p(d.getSeconds()));
+    const h = Number(parts.hour) % 24;
+    const map = { yyyy: parts.year, yy: String(parts.year).slice(2), MM: p(parts.month), M: String(Number(parts.month)), dd: p(parts.day), d: String(Number(parts.day)), HH: p(h), mm: p(parts.minute), ss: p(parts.second) };
+    return fmt.replace(/yyyy|yy|MM|M|dd|d|HH|mm|ss/g, t => map[t]);
   },
 };
 class TextOut {
@@ -156,7 +194,14 @@ const server = http.createServer((req, res) => {
         if (out.file) h['Content-Disposition'] = `attachment; filename="${out.file}"`;
         res.writeHead(200, h); return res.end(out.getContent());
       }
-      if (u.pathname === '/stats') { res.writeHead(200); return res.end(JSON.stringify(stats)); }
+      if (u.pathname === '/damage') {
+        // pengujian: tiru sheet yang telanjur dirusak backend lama (kolom teks dikonversi Sheets)
+        const sh = sheets.Endpoint; let n = 0;
+        if (sh) sh.data.forEach((r, i) => { if (i === 0) return; [5, 7, 9].forEach(j => { delete sh.fmt[(i + 1) + ':' + (j + 1)]; const v = coerce(sh, i + 1, j + 1, r[j]); if (v !== r[j]) { r[j] = v; n++; } }); });
+        Object.keys(cacheStore).filter(k => k.startsWith('ep_map')).forEach(k => delete cacheStore[k]);
+        res.writeHead(200); return res.end(JSON.stringify({ damaged: n }));
+      }
+      if (u.pathname === '/stats') { res.writeHead(200); return res.end(JSON.stringify(Object.assign({}, stats, stats0))); }
       if (u.pathname === '/exec' && req.method === 'POST') { stats.post++; } if (u.pathname === '/exec' && req.method === 'POST') return sendOut(res, ctx.doPost({ postData: { contents: body } }));
       if (u.pathname === '/exec') return sendOut(res, ctx.doGet({ parameter: u.query }));
       if (u.pathname === '/api' && req.method === 'POST') {
