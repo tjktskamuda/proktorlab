@@ -6,7 +6,7 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.3.0'
+$AgentVersion = '1.4.0'
 $AutopilotVersion = '1.3.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
@@ -58,6 +58,7 @@ $ExamClick = $false
 $ExamRules = ''
 $AutopilotFile = Join-Path $Base 'autopilot.ps1'
 $ExamCloseKeys = ''
+$ExamDirDetect = $true
 $ExamLearned = New-Object System.Collections.ArrayList
 $LearnAt = [datetime]::MinValue
 $Info      = $null
@@ -184,7 +185,13 @@ function Update-ExamLearned {
     $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath -ErrorAction Stop)
   } catch { return }
   $set = @{}
-  foreach ($p in $all) { if ([string]$p.ExecutablePath -and ([string]$p.ExecutablePath -eq $exe)) { $set[[int]$p.ProcessId] = $true } }
+  $dir = ''
+  if ($script:ExamDirDetect) { $dir = Get-ExamDir }
+  foreach ($p in $all) {
+    $path = [string]$p.ExecutablePath
+    if (-not $path) { continue }
+    if ($path -eq $exe -or ($dir -and $path.StartsWith((Get-DirPrefix $dir), [StringComparison]::OrdinalIgnoreCase))) { $set[[int]$p.ProcessId] = $true }
+  }
   if ($set.Count -eq 0) { return }
   $changed = $true
   while ($changed) {
@@ -340,10 +347,55 @@ function Resolve-ExamPath([switch]$Force) {
   return $found
 }
 
+# Folder instalasi Exam Browser. Semua program yang berjalan dari folder ini
+# dianggap bagian dari Exam Browser (misalnya runningexam.exe pada ANBK),
+# walaupun namanya belum ditulis di "Nama proses".
+function Get-DirPrefix([string]$dir) {
+  if ($dir.Contains('/') -and -not $dir.Contains('\')) { return $dir + '/' }
+  return $dir + '\'
+}
+
+function Get-ExamDir {
+  $exe = $script:ExamUsed
+  if (-not $exe) { return '' }
+  $leaf = (Get-Leaf $exe).ToLower()
+  if (@('chrome.exe', 'msedge.exe', 'firefox.exe', 'iexplore.exe', 'opera.exe', 'brave.exe') -contains $leaf) { return '' }
+  $dir = ([string]$exe).Substring(0, [math]::Max(0, ([string]$exe).Length - (Get-Leaf $exe).Length)).TrimEnd('\', '/')
+  if (-not $dir -or $dir -match '^[A-Za-z]:$') { return '' }
+  if ($env:SystemRoot -and $dir.StartsWith($env:SystemRoot, [StringComparison]::OrdinalIgnoreCase)) { return '' }
+  if ($dir -match '\\Users\\[^\\]+\\(Desktop|Downloads|Documents|OneDrive)$' -or $dir -match '\\Users\\[^\\]+$') { return '' }
+  foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramData)) { if ($pf -and $dir -eq $pf.TrimEnd('\')) { return '' } }
+  return $dir
+}
+
 function Get-ExamProcesses {
-  $names = Get-ExamNames
-  if ($names.Count -eq 0) { return @() }
-  return @(Get-Process -Name $names -ErrorAction SilentlyContinue)
+  $ids = @{}
+  $out = @()
+  $names = @(Get-ExamNames)
+  if ($names.Count -gt 0) {
+    foreach ($p in @(Get-Process -Name $names -ErrorAction SilentlyContinue)) { if (-not $ids.ContainsKey($p.Id)) { $ids[$p.Id] = 1; $out += $p } }
+  }
+  $dir = ''
+  if ($script:ExamDirDetect) { $dir = Get-ExamDir }
+  if ($dir) {
+    $prefix = Get-DirPrefix $dir
+    $procList = $null
+    try {
+      $procList = @(Get-CimInstance Win32_Process -Property ProcessId, Name, ExecutablePath -ErrorAction Stop | ForEach-Object { @{ id = [int]$_.ProcessId; name = [string]$_.Name; path = [string]$_.ExecutablePath } })
+    } catch {
+      # cadangan bila WMI bermasalah
+      $procList = @(Get-Process -ErrorAction SilentlyContinue | ForEach-Object { $pp = ''; try { $pp = [string]$_.Path } catch {}; @{ id = [int]$_.Id; name = [string]$_.ProcessName; path = $pp } })
+    }
+    foreach ($c in $procList) {
+      $path = $c.path
+      if (-not $path -or -not $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+      if ($ids.ContainsKey($c.id) -or $c.id -eq $PID) { continue }
+      if ($NoLearn -contains (($c.name -replace '\.exe$', '').ToLower())) { continue }
+      $pr = Get-Process -Id $c.id -ErrorAction SilentlyContinue
+      if ($pr) { $ids[$c.id] = 1; $out += $pr }
+    }
+  }
+  return $out
 }
 
 function ConvertTo-Vbs([string]$s) {
@@ -438,7 +490,7 @@ function Send-Wol($list) {
 }
 
 function Add-Result([string]$jobId, [string]$status, [string]$output) {
-  if ($output.Length -gt 900) { $output = $output.Substring(0, 900) }
+  if ($output.Length -gt 2800) { $output = $output.Substring(0, 2800) }
   [void]$Results.Add(@{ id = $jobId; s = $status; o = $output; t = (Get-ServerNow) })
   Save-State
   $script:NextCheck = Get-Date
@@ -458,13 +510,16 @@ function Invoke-Checkin {
   }
   $sendResults = @($Results.ToArray())
   $sendAcks = @($Acks.ToArray())
-  $examRunning = (@(Get-ExamProcesses).Count -gt 0)
+  $examProcs = @(Get-ExamProcesses)
+  $examRunning = ($examProcs.Count -gt 0)
+  $examNames = @($examProcs | ForEach-Object { $_.ProcessName } | Sort-Object -Unique | Select-Object -First 6)
   $body = @{
     k = $Key; a = 'checkin'; id = $Id; ver = $AgentVersion; grp = $Group
     user = (Get-LoggedUser); exam = $examRunning
     ip = $script:Info.ip; mac = $script:Info.mac; bc = $script:Info.bc; os = $script:Info.os
     results = $sendResults; acks = $sendAcks
     exp = $script:ExamUsed; eok = [bool]$script:ExamUsed; ecfg = [bool]$script:ExamSig
+    epl = ($examNames -join ','); edir = $(if ($script:ExamDirDetect) { Get-ExamDir } else { '' })
   }
   $t0 = Get-NowMs
   $res = Invoke-Api $body
@@ -490,6 +545,7 @@ function Invoke-Checkin {
     $script:ExamClick = ($res.cfg.examClick -eq $true)
     $script:ExamRules = [string]$res.cfg.examRules
     $script:ExamCloseKeys = [string]$res.cfg.examCloseKeys
+    $script:ExamDirDetect = ($res.cfg.examDirDetect -ne $false)
     $sig = $script:ExamPath + '|' + $script:ExamProc + '|' + $script:ExamAuto
     if ($sig -ne $script:ExamSig) {
       # pengaturan lokasi berubah: cek ulang segera pada laporan berikutnya
@@ -664,6 +720,42 @@ function Invoke-Job($j) {
         $vbs = 'CreateObject("WScript.Shell").Popup ' + (ConvertTo-Vbs $text) + ', 0, "Pesan dari Proktor", 4160'
         $u = Invoke-AsUser $vbs 'msg'
         Add-Result $jid 'ok' ('Pesan ditampilkan ke ' + $u + '.')
+      }
+      'list_procs' {
+        # daftar program yang berjalan di sesi pengguna (bukan bawaan Windows)
+        $user = Get-LoggedUser
+        $exam = @{}
+        foreach ($e in @(Get-ExamProcesses)) { $exam[[int]$e.Id] = 1 }
+        $sys = [string]$env:SystemRoot
+        $rows = @{}
+        $plist = $null
+        try {
+          $plist = @(Get-CimInstance Win32_Process -Property ProcessId, Name, ExecutablePath, SessionId -ErrorAction Stop |
+            ForEach-Object { @{ id = [int]$_.ProcessId; name = [string]$_.Name; path = [string]$_.ExecutablePath; sid = [int]$_.SessionId } })
+        } catch {
+          $plist = @(Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+            $pp = ''; try { $pp = [string]$_.Path } catch {}
+            @{ id = [int]$_.Id; name = ([string]$_.ProcessName + '.exe'); path = $pp; sid = [int]$_.SessionId } })
+        }
+        foreach ($c in $plist) {
+          if ($c.sid -eq 0 -and $env:SystemRoot) { continue }
+          $path = $c.path
+          if (-not $path) { continue }
+          if ($sys -and $path.StartsWith($sys, [StringComparison]::OrdinalIgnoreCase)) { continue }
+          if ($path.StartsWith($Base, [StringComparison]::OrdinalIgnoreCase)) { continue }
+          $k = $path.ToLower()
+          if ($rows.ContainsKey($k)) { if ($exam.ContainsKey($c.id)) { $rows[$k].exam = $true }; continue }
+          $rows[$k] = @{ name = $c.name; path = $path; exam = $exam.ContainsKey($c.id) }
+        }
+        $lines = @()
+        foreach ($r in ($rows.Values | Sort-Object @{ e = { -not $_.exam } }, @{ e = { $_.name } })) {
+          $mark = ''
+          if ($r.exam) { $mark = ' [EXAM]' }
+          $lines += ($r.name + $mark + ' - ' + $r.path)
+        }
+        $head = 'Pengguna: ' + $user + '. Folder Exam Browser: ' + (Get-ExamDir) + '. Nama proses dikenali: ' + ((Get-ExamNames) -join ', ') + '.'
+        if ($lines.Count -eq 0) { Add-Result $jid 'ok' ($head + "`nTidak ada program pengguna yang berjalan.") }
+        else { Add-Result $jid 'ok' ($head + "`n" + (($lines | Select-Object -First 40) -join "`n")) }
       }
       'open_url' {
         $url = [string]$p.url

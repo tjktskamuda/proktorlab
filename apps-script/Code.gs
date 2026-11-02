@@ -17,7 +17,7 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.3.0';
+var APP_VERSION = '1.4.0';
 
 var SHEETS = {
   EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
@@ -35,7 +35,8 @@ var ACTIONS = {
   lock: '#Kunci Layar',
   message: '#Kirim Pesan',
   open_url: '#Buka Situs',
-  update_agent: '#Perbarui Agen'
+  update_agent: '#Perbarui Agen',
+  list_procs: '#Cek Proses'
 };
 
 var NEW_GROUP = 'Endpoint Baru';
@@ -61,6 +62,7 @@ var DEFAULT_SETTINGS = {
   examClick: true,
   examRules: DEFAULT_RULES,
   examCloseKeys: 'Ctrl+C+B+L\nCtrl+C+B',
+  examDirDetect: true,
   groups: [NEW_GROUP],
   defaultGroup: NEW_GROUP
 };
@@ -301,7 +303,8 @@ function agentCheckin_(b) {
   var c = cache_();
   c.put('hb_' + id, JSON.stringify({
     t: now, user: str_(b.user, 120), exam: !!b.exam,
-    ep: str_(b.exp, 260), eok: !!b.eok, ecfg: !!b.ecfg, ver: str_(b.ver, 20)
+    ep: str_(b.exp, 260), eok: !!b.eok, ecfg: !!b.ecfg, ver: str_(b.ver, 20),
+    epl: str_(b.epl, 200), edir: str_(b.edir, 260)
   }), 21600);
   var ep = ensureEndpoint_(id, b, s);
 
@@ -342,7 +345,8 @@ function examCfg_(s, ep, ver) {
   return {
     examPath: paths, examArgs: s.examArgs, examProc: s.examProc, examAuto: s.examAuto !== false,
     examElevate: !!s.examElevate, examClick: s.examClick !== false, examRules: String(s.examRules || ''),
-    examCloseKeys: String(s.examCloseKeys || '')
+    examCloseKeys: String(s.examCloseKeys || ''),
+    examDirDetect: s.examDirDetect !== false
   };
 }
 
@@ -404,7 +408,7 @@ function applyAgentUpdates_(id, results, acks, now) {
       var r = resMap[j.id];
       if (r) {
         var ok = r.s === 'ok';
-        writes.push({ j: j, status: ok ? 'Berhasil' : 'Gagal', msg: str_(r.o, 900) || (ok ? 'Selesai.' : 'Gagal.'), notIf: j.wol ? ['Berhasil'] : null });
+        writes.push({ j: j, status: ok ? 'Berhasil' : 'Gagal', msg: str_(r.o, 3000) || (ok ? 'Selesai.' : 'Gagal.'), notIf: j.wol ? ['Berhasil'] : null });
         return;
       }
       if (j.dl < now) {
@@ -686,6 +690,8 @@ function endpointsView_() {
       examOverride: e.examOverride,
       examPath: h ? (h.ep || '') : '',
       examOk: online && h.ecfg ? !!h.eok : null,
+      examProcs: online && h.epl ? String(h.epl) : '',
+      examDir: h ? (h.edir || '') : '',
       agentOld: verLt_((h && h.ver) || e.ver, '1.1.0')
     };
   });
@@ -832,6 +838,7 @@ function saveSettings_(d) {
   if (d.examClick != null) s.examClick = !!d.examClick;
   if (d.examRules != null) s.examRules = str_(d.examRules, 2000).trim();
   if (d.examCloseKeys != null) s.examCloseKeys = str_(d.examCloseKeys, 300).trim();
+  if (d.examDirDetect != null) s.examDirDetect = !!d.examDirDetect;
   if (d.examArgs != null) s.examArgs = str_(d.examArgs, 500).trim();
   if (d.examProc != null) s.examProc = str_(d.examProc, 120).trim();
   if (d.defaultGroup != null && str_(d.defaultGroup, 60).trim()) s.defaultGroup = str_(d.defaultGroup, 60).trim();

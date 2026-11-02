@@ -120,6 +120,7 @@ Menu **Pustaka Skrip → Konfigurasi Exam Browser**. Pilih preset (Safe Exam Bro
 
 - Agen menekan **shortcut keluar** Exam Browser di komputer siswa, sama seperti menutup manual dengan keyboard. Bawaan: `Ctrl+C+B+L`, lalu `Ctrl+C+B` (satu per baris, dicoba berurutan). Konfirmasi Yes/OK yang muncul diklik otomatis.
 - Jika Exam Browser tetap terbuka, prosesnya dihentikan paksa, lalu Explorer (taskbar) dinyalakan lagi bila ikut mati.
+- Status **Exam Browser: Berjalan** dihitung dari *Nama proses* **dan** semua program yang berjalan dari **folder instalasi Exam Browser** (folder file .exe yang dipakai), jadi `runningexam.exe` ikut terdeteksi walaupun Exam Browser dibuka manual oleh siswa. Detail komputer menampilkan *Proses Exam* yang sedang terdeteksi; jalankan **#Cek Proses** untuk melihat semua program yang berjalan.
 - Agen **mempelajari sendiri** nama proses yang dibuat Exam Browser (misalnya `runningexam.exe` pada Exambrowser ANBK) agar status *Berjalan* dan #Close ExamBrowser tetap mengenalinya. Tombol **Pakai contoh Exambrowser ANBK** juga menambahkan `runningexam*,exambro*` ke *Nama proses*.
 
 **Jika ada komputer yang lokasi Exam Browser-nya berbeda:**
@@ -152,6 +153,7 @@ Urutan yang dicoba agen: lokasi khusus komputer itu → daftar lokasi umum → p
 | #Kirim Pesan | Pop-up pesan di layar siswa |
 | #Buka Situs | Membuka URL di browser bawaan |
 | #Perbarui Agen | Mengunduh ulang agen terbaru dari backend |
+| #Cek Proses | Daftar program yang berjalan di komputer siswa; yang dikenali sebagai Exam Browser bertanda `[EXAM]` |
 
 Demi keamanan, panel hanya bisa menjalankan skrip di atas (tidak ada skrip bebas), sehingga link panel yang bocor tidak bisa dipakai menjalankan perintah sembarangan di komputer lab.
 
