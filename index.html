@@ -138,6 +138,7 @@ label.f .hint { font-weight: 400; color: var(--muted); font-size: 12.5px; }
 .search { position: relative; flex: 1 1 220px; max-width: 360px; }
 .search .ic { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
 .search .inp { padding-left: 34px; }
+.modal .mb > .search { flex: none; }   /* di dialog (susunan atas-bawah) kotak cari setinggi isinya saja */
 .drop { position: relative; display: inline-block; }
 .drop-menu { position: absolute; top: calc(100% + 4px); left: 0; min-width: 230px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); z-index: 40; padding: 4px; }
 .drop-menu button { display: flex; width: 100%; gap: 9px; align-items: center; border: 0; background: none; padding: 8px 10px; border-radius: 4px; cursor: pointer; text-align: left; }
@@ -250,8 +251,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .steps .s.on { border-color: var(--navy); color: var(--text); } .steps .s.on b { color: var(--navy-text); }
 .steps .s.done { border-color: var(--navy); } .steps .s.done b { color: var(--navy-text); }
 .steps .s span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.slist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
-.sitem { display: flex; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: flex-start; }
+/* daftar skrip di wizard: menggulir sendiri, tidak pernah terpotong */
+.slist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow-y: auto; flex: 1 1 auto; min-height: 170px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.sitem { display: flex; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: flex-start; flex: none; }
 .sitem:last-child { border-bottom: 0; }
 .sitem:hover { background: var(--surface-2); }
 .sitem.on { background: var(--navy-soft); }
@@ -379,7 +381,7 @@ var SCRIPTS = [
     desc: 'Menampilkan pesan pop-up di layar siswa, misalnya pengumuman waktu ujian.',
     params: [{ key: 'text', label: 'Isi pesan', type: 'textarea', ph: 'Contoh: Ujian sesi 1 dimulai 5 menit lagi. Silakan login ke Exam Browser.' }] },
   { id: 'open_url', name: '#Buka Situs', icon: 'globe', win: 30,
-    desc: 'Membuka alamat web di browser bawaan komputer, bisa langsung layar penuh.',
+    desc: 'Membuka alamat web di browser komputer siswa: tampilan biasa, layar penuh, atau layar penuh terkunci (siswa tidak bisa keluar).',
     params: [{ key: 'url', label: 'Alamat URL', type: 'text', ph: 'https://' },
       { key: 'view', label: 'Tampilan', type: 'select', def: 'normal', options: [['normal', 'Biasa'], ['full', 'Layar penuh (siswa masih bisa keluar dengan F11)'], ['lock', 'Layar penuh terkunci (siswa tidak bisa keluar)']] },
       { key: 'browser', label: 'Browser untuk layar penuh terkunci', type: 'select', def: 'edge', showIf: ['view', 'lock'], options: [['edge', 'Microsoft Edge (ada di semua Windows)'], ['chrome', 'Google Chrome (jika terpasang)']] }] },
@@ -1991,6 +1993,8 @@ var Wizard = {
     };
     $('#wz-q').addEventListener('input', draw);
     draw();
+    var picked = $('#wz-list .sitem.on');
+    if (picked) { var lst = $('#wz-list'); lst.scrollTop = Math.max(0, picked.offsetTop - lst.offsetTop - 8); }
     this.params();
   },
   params: function () {
