@@ -17,7 +17,7 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.6.0';
+var APP_VERSION = '1.7.0';
 
 var SHEETS = {
   EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
@@ -35,6 +35,7 @@ var ACTIONS = {
   lock: '#Kunci Layar',
   message: '#Kirim Pesan',
   open_url: '#Buka Situs',
+  fullscreen: '#Layar Penuh Browser',
   update_agent: '#Perbarui Agen',
   list_procs: '#Cek Proses'
 };
@@ -504,7 +505,9 @@ function createJob_(d) {
   if (a === 'open_url') {
     params.url = str_(d.params && d.params.url, 500).trim();
     if (!/^https?:\/\//i.test(params.url)) throw new Error('URL harus diawali http:// atau https://');
+    if (d.params && d.params.full) params.full = true;
   }
+  if (a === 'fullscreen') params.mode = d.params && d.params.mode === 'off' ? 'off' : 'on';
   var map = epMap_();
   var seen = {};
   var targets = [].concat(d.targets || []).map(normId_).filter(function (t) {

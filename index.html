@@ -378,8 +378,12 @@ var SCRIPTS = [
     desc: 'Menampilkan pesan pop-up di layar siswa, misalnya pengumuman waktu ujian.',
     params: [{ key: 'text', label: 'Isi pesan', type: 'textarea', ph: 'Contoh: Ujian sesi 1 dimulai 5 menit lagi. Silakan login ke Exam Browser.' }] },
   { id: 'open_url', name: '#Buka Situs', icon: 'globe', win: 30,
-    desc: 'Membuka alamat web di browser bawaan komputer.',
-    params: [{ key: 'url', label: 'Alamat URL', type: 'text', ph: 'https://' }] },
+    desc: 'Membuka alamat web di browser bawaan komputer, bisa langsung layar penuh.',
+    params: [{ key: 'url', label: 'Alamat URL', type: 'text', ph: 'https://' },
+      { key: 'full', label: 'Langsung tampilkan layar penuh (seperti menekan F11)', type: 'check', def: false }] },
+  { id: 'fullscreen', name: '#Layar Penuh Browser', icon: 'expand', win: 30,
+    desc: 'Menjadikan browser yang sedang terbuka di komputer siswa tampil layar penuh (seperti menekan F11), atau mengembalikannya ke tampilan biasa.',
+    params: [{ key: 'mode', label: 'Pilihan', type: 'select', def: 'on', options: [['on', 'Jadikan layar penuh'], ['off', 'Keluar dari layar penuh']] }] },
   { id: 'update_agent', name: '#Perbarui Agen', icon: 'refresh', win: 120,
     desc: 'Mengunduh ulang agen ProktorLab terbaru dari server ini, lalu memulai ulang agen.' },
   { id: 'list_procs', name: '#Cek Proses', icon: 'search', win: 15,
@@ -450,6 +454,7 @@ var ICONS = {
   lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>',
+  expand: '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>',
   history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 3"/>',
   code: '<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',
@@ -741,9 +746,12 @@ var Demo = (function () {
         return setRow(job, epId, 'Berhasil', 'Pesan ditampilkan ke ' + user + '.');
       case 'open_url':
         if (!user) return setRow(job, epId, 'Gagal', noUser);
-        return setRow(job, epId, 'Berhasil', 'Situs dibuka untuk ' + user + '.');
+        return setRow(job, epId, 'Berhasil', 'Situs dibuka untuk ' + user + '.' + (job.params.full ? ' Browser Google Chrome sekarang layar penuh.' : ''));
+      case 'fullscreen':
+        if (!user) return setRow(job, epId, 'Gagal', noUser);
+        return setRow(job, epId, 'Berhasil', job.params.mode === 'off' ? 'Browser Google Chrome keluar dari layar penuh.' : 'Browser Google Chrome ("Ujian - Google Chrome") sekarang layar penuh.');
       case 'update_agent':
-        e.ver = '1.5.0'; return setRow(job, epId, 'Berhasil', 'Agen diperbarui, memulai ulang agen...');
+        e.ver = '1.7.0'; return setRow(job, epId, 'Berhasil', 'Agen diperbarui, memulai ulang agen...');
       case 'list_procs': {
         var exd = demoExam(e);
         var lines = ['Pengguna: ' + (user || '-') + '. Folder Exam Browser: ' + (exd.path ? exd.path.replace(/\\[^\\]+$/, '') : '-') + '. Nama proses dikenali: SafeExamBrowser*, runningexam.'];
@@ -1589,7 +1597,9 @@ VIEWS.job = {
     var pend = (c.Menunggu || 0) + (c.Diterima || 0);
     var failed = rows.filter(function (x) { return x.status === 'Gagal' || x.status === 'Kedaluwarsa'; }).map(function (x) { return x.ep; });
     var sc = SCRIPT[j.action] || {};
-    var params = j.params && (j.params.text || j.params.url) ? '<dt>Parameter</dt><dd>' + esc(j.params.text || j.params.url) + '</dd>' : '';
+    var ptxt = !j.params ? '' : j.action === 'fullscreen' ? (j.params.mode === 'off' ? 'Keluar dari layar penuh' : 'Jadikan layar penuh')
+      : (j.params.text || j.params.url || '') + (j.params.url && j.params.full ? ' (layar penuh)' : '');
+    var params = ptxt ? '<dt>Parameter</dt><dd>' + esc(ptxt) + '</dd>' : '';
     $('#view').innerHTML =
       '<div class="page-h"><div><h1>' + esc(j.script) + (sc.sub ? ' <span class="muted" style="font-weight:500;font-size:15px">' + esc(sc.sub) + '</span>' : '') + '</h1>' +
       '<p>' + esc(sc.desc || '') + '</p></div><div class="act">' +
@@ -1971,13 +1981,26 @@ var Wizard = {
     if (!el) return;
     var sc = SCRIPT[d.action];
     if (!sc || !sc.params) { el.innerHTML = ''; return; }
+    sc.params.forEach(function (p) { if (d.params[p.key] === undefined && p.def !== undefined) d.params[p.key] = p.def; });
     el.innerHTML = sc.params.map(function (p) {
       var v = esc(d.params[p.key] || '');
+      if (p.type === 'check') {
+        return '<label class="radio" style="font-size:13.5px;margin-top:10px"><input type="checkbox" data-c="' + p.key + '"' + (d.params[p.key] ? ' checked' : '') + '><span>' + esc(p.label) + '</span></label>';
+      }
+      if (p.type === 'select') {
+        return '<label class="f">' + esc(p.label) + '<select class="inp" data-p="' + p.key + '">' + p.options.map(function (o) {
+          return '<option value="' + esc(o[0]) + '"' + (d.params[p.key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+        }).join('') + '</select></label>';
+      }
       return '<label class="f">' + esc(p.label) + (p.type === 'textarea'
         ? '<textarea class="inp" data-p="' + p.key + '" maxlength="500" placeholder="' + esc(p.ph) + '">' + v + '</textarea>'
         : '<input class="inp" data-p="' + p.key + '" maxlength="500" placeholder="' + esc(p.ph) + '" value="' + v + '">') + '</label>';
     }).join('');
-    $$('[data-p]', el).forEach(function (i) { i.addEventListener('input', function () { d.params[this.getAttribute('data-p')] = this.value; }); });
+    $$('[data-p]', el).forEach(function (i) {
+      var upd = function () { d.params[this.getAttribute('data-p')] = this.value; };
+      i.addEventListener('input', upd); i.addEventListener('change', upd);
+    });
+    $$('[data-c]', el).forEach(function (i) { i.addEventListener('change', function () { d.params[this.getAttribute('data-c')] = this.checked; }); });
   },
   renderFootOnly: function () {
     var d = this.d, n = Object.keys(d.sel).length;
@@ -2047,7 +2070,9 @@ var Wizard = {
       var n = Object.keys(d.sel).length;
       var whenTxt = d.when === 'now' ? 'sekarang' : 'pada ' + fLong(zEpoch(d.date, d.time)) + ' pukul ' + d.time + ' ' + tz;
       $('#wz-sum').innerHTML = '<b>' + esc(sc.name) + '</b> akan dijalankan di <b>' + n + ' endpoint</b> ' + esc(whenTxt) + '.' +
-        (d.params.text ? '<div style="margin-top:6px">Pesan: “' + esc(d.params.text) + '”</div>' : '') + (d.params.url ? '<div style="margin-top:6px">URL: ' + esc(d.params.url) + '</div>' : '');
+        (d.params.text && d.action === 'message' ? '<div style="margin-top:6px">Pesan: “' + esc(d.params.text) + '”</div>' : '') +
+        (d.params.url && d.action === 'open_url' ? '<div style="margin-top:6px">URL: ' + esc(d.params.url) + (d.params.full ? ' (layar penuh)' : '') + '</div>' : '') +
+        (d.action === 'fullscreen' ? '<div style="margin-top:6px">' + (d.params.mode === 'off' ? 'Keluar dari layar penuh' : 'Jadikan layar penuh') + '</div>' : '');
     };
     $$('input, select', el).forEach(function (i) { i.addEventListener('input', upd); i.addEventListener('change', upd); });
     upd();
@@ -2060,6 +2085,7 @@ var Wizard = {
       var sc = SCRIPT[d.action];
       if (sc.params) {
         for (var i = 0; i < sc.params.length; i++) {
+          if (sc.params[i].type === 'check' || sc.params[i].type === 'select') continue;
           var v = String(d.params[sc.params[i].key] || '').trim();
           if (!v) { toast(sc.params[i].label + ' wajib diisi.', true); return; }
           if (sc.params[i].key === 'url' && !/^https?:\/\//i.test(v)) { toast('URL harus diawali http:// atau https://', true); return; }

@@ -1,4 +1,4 @@
-# ProktorLab Autopilot 1.5.0
+# ProktorLab Autopilot 1.6.0
 # ---------------------------------------------------------------
 # Dijalankan oleh agen ProktorLab di sesi Windows pengguna yang login.
 #
@@ -6,6 +6,8 @@
 #                 tombol di jendela pembukanya (OK, RUN, Yes, ...).
 #   -Mode close : menutup Exam Browser dengan shortcut keluar resminya
 #                 (misalnya Ctrl+C+B+L), lalu mengklik konfirmasi Yes/OK.
+#   -Mode fullscreen : menjadikan browser yang terbuka layar penuh (F11)
+#                 atau mengembalikannya (want = on / off).
 #
 # Pengaturan dibaca dari file -Job (JSON) yang dibuat agen.
 # Format aturan klik (satu per baris):   Judul jendela > Tombol1/Tombol2
@@ -39,6 +41,8 @@ $NamesText = From-B64 $NamesB64
 $Dir = ''
 $LogFile = ''
 $JobErr = ''
+$Want = 'on'
+$Delay = 0
 if ($Job) {
   try {
     $J = Get-Content -LiteralPath $Job -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
@@ -51,6 +55,8 @@ if ($Job) {
     $Dir = [string]$J.dir
     $LogFile = [string]$J.log
     if ($J.timeout) { $Timeout = [int]$J.timeout }
+    if ($J.want) { $Want = [string]$J.want }
+    if ($J.delay) { $Delay = [int]$J.delay }
   } catch { $JobErr = 'File tugas tidak terbaca: ' + $_.Exception.Message }
 }
 $Names = @($NamesText -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -181,7 +187,7 @@ $NativeState = 0
 function Initialize-Native {
   if ($script:NativeState -ne 0) { return ($script:NativeState -gt 0) }
   try {
-    Add-Type -Namespace ProktorLab -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, int flags, int extra); [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type); [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();' -ErrorAction Stop
+    Add-Type -Namespace ProktorLab -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, int flags, int extra); [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type); [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);' -ErrorAction Stop
     try { [void][ProktorLab.Native]::SetProcessDPIAware() } catch {}
     $script:NativeState = 1
   } catch {
@@ -516,6 +522,138 @@ function Send-Combo($combo) {
   }
 }
 
+# ======================================================================
+#  Mode layar penuh browser
+# ======================================================================
+$Browsers = @{ chrome = 'Google Chrome'; msedge = 'Microsoft Edge'; firefox = 'Mozilla Firefox'; opera = 'Opera'; brave = 'Brave'; vivaldi = 'Vivaldi'; browser = 'Yandex Browser'; iexplore = 'Internet Explorer' }
+
+# jendela browser yang terlihat, urut dari yang paling depan
+function Get-BrowserWindows {
+  $out = New-Object System.Collections.ArrayList
+  $tops = $null
+  try { $tops = $script:AE::RootElement.FindAll($script:Scope::Children, $script:TrueCond) } catch { return @() }
+  foreach ($t in $tops) {
+    try {
+      $c = $t.Current
+      $pn = ([string](Get-ProcName ([int]$c.ProcessId))).ToLower()
+      if (-not $Browsers.ContainsKey($pn) -or -not [string]$c.Name) { continue }
+      $hwnd = [int64]$c.NativeWindowHandle
+      $min = $false
+      if ($script:NativeState -gt 0) { try { $min = [ProktorLab.Native]::IsIconic([IntPtr]$hwnd) } catch {} }
+      $r = $c.BoundingRectangle
+      if (-not $min -and ($r.IsEmpty -or $r.Width -lt 300 -or $r.Height -lt 200)) { continue }
+      [void]$out.Add(@{ el = $t; hwnd = $hwnd; pid = [int]$c.ProcessId; proc = $pn; title = [string]$c.Name; min = $min })
+    } catch {}
+  }
+  return $out.ToArray()
+}
+
+function Get-WinRect($w) {
+  try { $r = $w.el.Current.BoundingRectangle; return @{ x = [double]$r.X; y = [double]$r.Y; w = [double]$r.Width; h = [double]$r.Height; empty = [bool]$r.IsEmpty } } catch { return @{ empty = $true } }
+}
+
+# layar (monitor) tempat jendela berada
+function Get-MonitorRect($r) {
+  try {
+    $pt = New-Object System.Drawing.Point([int]($r.x + $r.w / 2), [int]($r.y + $r.h / 2))
+    $b = [System.Windows.Forms.Screen]::FromPoint($pt).Bounds
+    return @{ x = [double]$b.X; y = [double]$b.Y; w = [double]$b.Width; h = [double]$b.Height }
+  } catch {}
+  $d = $script:Desk
+  return @{ x = [double]$d.X; y = [double]$d.Y; w = [double]$d.Width; h = [double]$d.Height }
+}
+
+# layar penuh = jendela menutupi seluruh layar tanpa bingkai (jendela maximize biasa
+# bergeser beberapa piksel ke luar layar dan tidak menutupi taskbar)
+function Test-WinFull($w) {
+  $r = Get-WinRect $w
+  if ($r.empty) { return $false }
+  $m = Get-MonitorRect $r
+  return ($r.x -ge $m.x - 1 -and $r.y -ge $m.y - 1 -and $r.w -ge $m.w - 2 -and $r.h -ge $m.h - 2)
+}
+
+function Get-RectText($w) { $r = Get-WinRect $w; if ($r.empty) { return '-' }; return ([string][int]$r.x + ',' + [int]$r.y + ' ' + [int]$r.w + 'x' + [int]$r.h) }
+
+function Set-WinForeground($w) {
+  $ok = $false
+  if (Initialize-Native) {
+    $h = [IntPtr]$w.hwnd
+    try { if ([ProktorLab.Native]::IsIconic($h)) { [void][ProktorLab.Native]::ShowWindow($h, 9); Start-Sleep -Milliseconds 500 } } catch {}
+    try { $w.el.SetFocus() } catch {}
+    Start-Sleep -Milliseconds 250
+    if ([ProktorLab.Native]::GetForegroundWindow() -ne $h) {
+      # Windows hanya mengizinkan pindah jendela aktif dari program yang baru memberi input
+      [ProktorLab.Native]::keybd_event(0x12, 0, 0, 0)
+      [void][ProktorLab.Native]::SetForegroundWindow($h)
+      [ProktorLab.Native]::keybd_event(0x12, 0, 2, 0)
+      Start-Sleep -Milliseconds 300
+    }
+    $ok = ([ProktorLab.Native]::GetForegroundWindow() -eq $h)
+  } else {
+    try { $w.el.SetFocus(); $ok = $true } catch {}
+    Start-Sleep -Milliseconds 300
+  }
+  return $ok
+}
+
+function Send-F11 {
+  if ($script:NativeState -gt 0) {
+    $sc = [byte][ProktorLab.Native]::MapVirtualKey(0x7A, 0)
+    [ProktorLab.Native]::keybd_event(0x7A, $sc, 0, 0)
+    Start-Sleep -Milliseconds 60
+    [ProktorLab.Native]::keybd_event(0x7A, $sc, 2, 0)
+  } else {
+    [System.Windows.Forms.SendKeys]::SendWait('{F11}')
+  }
+}
+
+function Write-Result([bool]$ok, [string]$msg) {
+  Write-AutoLog ('HASIL ' + (ConvertTo-Json -InputObject @{ ok = $ok; msg = $msg } -Compress))
+}
+
+function Start-FullscreenMode {
+  $wantFull = ($Want -ne 'off')
+  if ($Delay -gt 0) { Start-Sleep -Seconds $Delay }
+  [void](Initialize-Native)
+  $deadline = (Get-Date).AddSeconds($Timeout)
+  $w = $null
+  $waited = $false
+  while ((Get-Date) -lt $deadline) {
+    $list = @(Get-BrowserWindows)
+    if ($list.Count) { $w = $list[0]; break }
+    $waited = $true
+    Start-Sleep -Milliseconds 700
+  }
+  if (-not $w) { Write-Result $false 'Tidak ada jendela browser yang terbuka di layar siswa.'; return }
+  if ($waited) { Start-Sleep -Milliseconds 1500 }   # browser baru dibuka, tunggu sampai siap
+  $desc = $Browsers[$w.proc] + ' ("' + $w.title + '")'
+  Write-AutoLog ('Browser paling depan: ' + $desc + ', posisi ' + (Get-RectText $w))
+  if ((Test-WinFull $w) -eq $wantFull) {
+    if ($wantFull) { Write-Result $true ('Browser ' + $desc + ' sudah dalam layar penuh.') }
+    else { Write-Result $true ('Browser ' + $desc + ' tidak dalam layar penuh.') }
+    return
+  }
+  for ($try = 1; $try -le 3; $try++) {
+    $before = Get-RectText $w
+    $fg = Set-WinForeground $w
+    Send-F11
+    Write-AutoLog ('Tekan F11 (percobaan ' + $try + ', jendela aktif: ' + $fg + ')')
+    Start-Sleep -Milliseconds 1500
+    $after = Get-RectText $w
+    if ((Test-WinFull $w) -eq $wantFull) {
+      if ($wantFull) { Write-Result $true ('Browser ' + $desc + ' sekarang layar penuh.') }
+      else { Write-Result $true ('Browser ' + $desc + ' keluar dari layar penuh.') }
+      return
+    }
+    if ($after -ne $before) {
+      # ukuran berubah tapi tidak cocok dengan perkiraan: jangan tekan F11 lagi (bisa membalikkan)
+      Write-Result $true ('F11 sudah ditekan di ' + $desc + ' (ukuran jendela berubah ' + $before + ' -> ' + $after + ').')
+      return
+    }
+  }
+  Write-Result $false ('Browser ' + $desc + ' tidak berubah setelah F11 ditekan 3 kali. Pastikan tidak ada jendela lain yang menghalangi.')
+}
+
 # ---------------- mulai ----------------
 if ($MyInvocation.InvocationName -eq '.') { return }   # dimuat untuk pengujian
 if ($Mode -eq 'open' -and -not $Job) { try { Remove-Item -LiteralPath $LogFile -Force -ErrorAction SilentlyContinue } catch {} }
@@ -544,9 +682,13 @@ if ($Mode -eq 'open' -and $Rules.Count -eq 0) { Write-AutoLog 'Tidak ada aturan 
 try { Initialize-Uia } catch {
   Write-AutoLog ('UI Automation tidak tersedia, klik otomatis dilewati: ' + $_.Exception.Message)
   if ($Mode -eq 'open') { Write-Summary }
+  if ($Mode -eq 'fullscreen') { Write-Result $false ('UI Automation tidak tersedia: ' + $_.Exception.Message) }
   exit 0
 }
 Write-AutoLog 'Siap memantau jendela.'
+
+# ================= MODE FULLSCREEN =================
+if ($Mode -eq 'fullscreen') { Start-FullscreenMode; exit 0 }
 
 # ================= MODE CLOSE =================
 if ($Mode -eq 'close') {

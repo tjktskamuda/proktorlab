@@ -159,7 +159,8 @@ Urutan yang dicoba agen: lokasi khusus komputer itu → daftar lokasi umum → p
 | #Shutdown / #Restart | `shutdown.exe /s` atau `/r /f /t 5` |
 | #Log Off / #Kunci Layar | Keluar dari akun / kunci layar |
 | #Kirim Pesan | Pop-up pesan di layar siswa |
-| #Buka Situs | Membuka URL di browser bawaan |
+| #Buka Situs | Membuka URL di browser bawaan; centang *Langsung tampilkan layar penuh* agar langsung F11 |
+| #Layar Penuh Browser | Menjadikan browser yang sedang terbuka (Chrome, Edge, Firefox, Opera, Brave) layar penuh seperti menekan F11, atau keluar dari layar penuh. Browser yang sudah layar penuh tidak diubah |
 | #Perbarui Agen | Mengunduh ulang agen terbaru dari backend |
 | #Cek Proses | Daftar program yang berjalan di komputer siswa; yang dikenali sebagai Exam Browser bertanda `[EXAM]` |
 

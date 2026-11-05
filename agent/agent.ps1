@@ -6,8 +6,8 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.6.0'
-$AutopilotVersion = '1.5.0'
+$AgentVersion = '1.7.0'
+$AutopilotVersion = '1.6.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -614,6 +614,29 @@ function Invoke-Follows {
   }
 }
 
+# Jadikan browser yang terbuka di layar siswa layar penuh (want = on) atau
+# kembalikan (off), lewat autopilot di sesi pengguna. Hasil: @{ s; o }
+function Invoke-Fullscreen([string]$want, [int]$delay) {
+  $log = Start-Autopilot @{ mode = 'fullscreen'; want = $want; delay = $delay; timeout = 25 } 'full' -Quiet
+  $line = ''
+  for ($w = 0; $w -lt 90; $w++) {
+    Start-Sleep -Milliseconds 500
+    $line = [string](@(Read-RunLog $log 60) | Where-Object { $_ -match 'HASIL \{' } | Select-Object -Last 1)
+    if ($line) { break }
+  }
+  if (-not $line) {
+    $lines = @(Read-RunLog $log 6)
+    if ($lines.Count -eq 0) { return @{ s = 'err'; o = 'Perintah layar penuh tidak berjalan di komputer ini (tidak ada catatan). Kemungkinan diblokir antivirus atau kebijakan Windows.' } }
+    return @{ s = 'err'; o = ('Perintah layar penuh belum selesai. Catatan terakhir: ' + ($lines -join ' | ')) }
+  }
+  try {
+    $o = $line.Substring($line.IndexOf('HASIL ') + 6) | ConvertFrom-Json
+    $st = 'err'
+    if ($o.ok) { $st = 'ok' }
+    return @{ s = $st; o = [string]$o.msg }
+  } catch { return @{ s = 'err'; o = $line } }
+}
+
 # Buka file Exam Browser di sesi pengguna.
 #  - .exe + Administrator (atau tanpa VBScript): dijalankan langsung oleh Task Scheduler
 #  - selain itu lewat shell Windows (sama seperti klik dua kali; UAC muncul bila perlu)
@@ -1006,7 +1029,19 @@ function Invoke-Job($j) {
         $url = [string]$p.url
         if ($url -notmatch '^https?://') { throw 'URL harus diawali http:// atau https://' }
         $u = Invoke-AsUser '' 'url' -Exe 'explorer.exe' -Arguments ('"' + $url + '"')
-        Add-Result $jid 'ok' ('Situs dibuka untuk ' + $u + '.')
+        if ($p.full) {
+          # tunggu browser menampilkan situsnya, lalu jadikan layar penuh
+          $fr = Invoke-Fullscreen 'on' 3
+          Add-Result $jid $fr.s ('Situs dibuka untuk ' + $u + '. ' + $fr.o)
+        } else {
+          Add-Result $jid 'ok' ('Situs dibuka untuk ' + $u + '.')
+        }
+      }
+      'fullscreen' {
+        $want = 'on'
+        if ([string]$p.mode -eq 'off') { $want = 'off' }
+        $fr = Invoke-Fullscreen $want 0
+        Add-Result $jid $fr.s $fr.o
       }
       'update_agent' {
         $sep = '?'
