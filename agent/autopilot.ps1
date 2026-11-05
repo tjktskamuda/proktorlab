@@ -1,4 +1,4 @@
-# ProktorLab Autopilot 1.6.0
+# ProktorLab Autopilot 1.7.0
 # ---------------------------------------------------------------
 # Dijalankan oleh agen ProktorLab di sesi Windows pengguna yang login.
 #
@@ -8,6 +8,9 @@
 #                 (misalnya Ctrl+C+B+L), lalu mengklik konfirmasi Yes/OK.
 #   -Mode fullscreen : menjadikan browser yang terbuka layar penuh (F11)
 #                 atau mengembalikannya (want = on / off).
+#   -Mode kiosk : membuka situs di Edge/Chrome mode kiosk (layar penuh tanpa
+#                 bisa keluar) lalu menjaganya: dibuka lagi bila ditutup dan
+#                 dikembalikan ke depan bila siswa pindah ke jendela lain.
 #
 # Pengaturan dibaca dari file -Job (JSON) yang dibuat agen.
 # Format aturan klik (satu per baris):   Judul jendela > Tombol1/Tombol2
@@ -43,6 +46,8 @@ $LogFile = ''
 $JobErr = ''
 $Want = 'on'
 $Delay = 0
+$Url = ''
+$Browser = 'edge'
 if ($Job) {
   try {
     $J = Get-Content -LiteralPath $Job -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
@@ -56,6 +61,8 @@ if ($Job) {
     $LogFile = [string]$J.log
     if ($J.timeout) { $Timeout = [int]$J.timeout }
     if ($J.want) { $Want = [string]$J.want }
+    if ($J.url) { $Url = [string]$J.url }
+    if ($J.browser) { $Browser = [string]$J.browser }
     if ($J.delay) { $Delay = [int]$J.delay }
   } catch { $JobErr = 'File tugas tidak terbaca: ' + $_.Exception.Message }
 }
@@ -186,8 +193,9 @@ function Initialize-Uia {
 $NativeState = 0
 function Initialize-Native {
   if ($script:NativeState -ne 0) { return ($script:NativeState -gt 0) }
+  if ($env:OS -ne 'Windows_NT') { $script:NativeState = -1; return $false }   # fungsi user32 hanya ada di Windows
   try {
-    Add-Type -Namespace ProktorLab -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, int flags, int extra); [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type); [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);' -ErrorAction Stop
+    Add-Type -Namespace ProktorLab -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, int flags, int extra); [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type); [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);' -ErrorAction Stop
     try { [void][ProktorLab.Native]::SetProcessDPIAware() } catch {}
     $script:NativeState = 1
   } catch {
@@ -654,6 +662,152 @@ function Start-FullscreenMode {
   Write-Result $false ('Browser ' + $desc + ' tidak berubah setelah F11 ditekan 3 kali. Pastikan tidak ada jendela lain yang menghalangi.')
 }
 
+# ======================================================================
+#  Mode kiosk: situs layar penuh terkunci + penjaga
+# ======================================================================
+$KioskNames = @{ edge = 'Microsoft Edge'; chrome = 'Google Chrome' }
+$KioskAllow = @('osk', 'tabtip', 'textinputhost', 'lockapp')   # keyboard layar sentuh dsb. boleh tampil
+$KioskMaxLoops = 0      # >0 hanya untuk pengujian
+
+function Find-BrowserExe([string]$b) {
+  if ($env:PROKTORLAB_TEST_BROWSER) { return $env:PROKTORLAB_TEST_BROWSER }   # hanya untuk pengujian
+  $c = @()
+  if ($b -eq 'chrome') {
+    if ($env:ProgramFiles) { $c += (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe') }
+    if (${env:ProgramFiles(x86)}) { $c += (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe') }
+    if ($env:LOCALAPPDATA) { $c += (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe') }
+  } else {
+    if (${env:ProgramFiles(x86)}) { $c += (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe') }
+    if ($env:ProgramFiles) { $c += (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe') }
+  }
+  foreach ($x in $c) { if ($x -and (Test-Path -LiteralPath $x)) { return $x } }
+  return ''
+}
+
+# Profil browser terpisah: memaksa jendela baru bermode kiosk walau browser biasa
+# sedang terbuka, dan menjadi penanda proses kiosk (untuk dijaga / ditutup).
+function Get-KioskDataDir([string]$b) {
+  $base = $env:LOCALAPPDATA
+  if (-not $base) { $base = $env:TEMP }
+  if (-not $base) { $base = '/tmp' }
+  return (Join-Path $base ('ProktorLab-kiosk-' + $b))
+}
+
+function Get-KioskArgs([string]$b, [string]$url, [string]$dataDir) {
+  $u = $url.Replace('"', '%22')
+  $a = '--kiosk "' + $u + '" --no-first-run --no-default-browser-check --hide-crash-restore-bubble --user-data-dir="' + $dataDir + '"'
+  if ($b -eq 'edge') { $a += ' --edge-kiosk-type=fullscreen' } else { $a += ' --disable-session-crashed-bubble' }
+  return $a
+}
+
+# PID proses browser kiosk (baris perintahnya memuat folder profil kiosk)
+function Get-KioskProcs {
+  $leaf = [IO.Path]::GetFileName($script:KioskExe)
+  $out = @()
+  $list = $null
+  try {
+    $list = @(Get-CimInstance Win32_Process -Filter ("Name='" + $leaf + "'") -Property ProcessId, CommandLine -ErrorAction Stop | ForEach-Object { @{ id = [int]$_.ProcessId; cmd = [string]$_.CommandLine } })
+  } catch {
+    $n = $leaf -replace '\.exe$', ''
+    $list = @(Get-Process -Name $n -ErrorAction SilentlyContinue | ForEach-Object { $cl = ''; try { $cl = [string]$_.CommandLine } catch {}; @{ id = [int]$_.Id; cmd = $cl } })
+  }
+  foreach ($x in $list) { if ($x.cmd -and $x.cmd.Contains($script:KioskMark)) { $out += $x.id } }
+  return $out
+}
+
+function Start-KioskBrowser {
+  $sp = @{ FilePath = $script:KioskExe; ArgumentList = (Get-KioskArgs $Browser $Url $script:KioskData); PassThru = $true }
+  try { $pr = Start-Process @sp -ErrorAction Stop; return [int]$pr.Id } catch { Write-AutoLog ('Gagal membuka browser: ' + $_.Exception.Message); return 0 }
+}
+
+# jendela utama kiosk: hwnd, 0 = belum ada, -1 = tidak bisa diperiksa (tanpa fungsi Windows)
+function Get-KioskWindow($pids) {
+  if ($script:NativeState -le 0) { return [int64]-1 }
+  foreach ($id in $pids) {
+    try { $h = (Get-Process -Id $id -ErrorAction Stop).MainWindowHandle; if ($h -ne [IntPtr]::Zero) { return [int64]$h } } catch {}
+  }
+  return [int64]0
+}
+
+function Get-ForegroundInfo {
+  if ($script:NativeState -le 0) { return @{ pid = 0; name = '' } }
+  try {
+    $h = [ProktorLab.Native]::GetForegroundWindow()
+    if ($h -eq [IntPtr]::Zero) { return @{ pid = 0; name = '' } }
+    [uint32]$fp = 0
+    [void][ProktorLab.Native]::GetWindowThreadProcessId($h, [ref]$fp)
+    return @{ pid = [int]$fp; name = ([string](Get-ProcName ([int]$fp))).ToLower() }
+  } catch { return @{ pid = 0; name = '' } }
+}
+
+function Set-KioskFront([int64]$hwnd) {
+  if ($hwnd -le 0) { return }
+  $h = [IntPtr]$hwnd
+  try { if ([ProktorLab.Native]::IsIconic($h)) { [void][ProktorLab.Native]::ShowWindow($h, 9) } } catch {}
+  [ProktorLab.Native]::keybd_event(0x12, 0, 0, 0)
+  [void][ProktorLab.Native]::SetForegroundWindow($h)
+  [ProktorLab.Native]::keybd_event(0x12, 0, 2, 0)
+}
+
+function Start-KioskGuard {
+  $b = 'edge'
+  if ($Browser -eq 'chrome') { $b = 'chrome' }
+  $exe = Find-BrowserExe $b
+  if (-not $exe -and $b -eq 'chrome') { $b = 'edge'; $exe = Find-BrowserExe 'edge'; if ($exe) { Write-AutoLog 'Google Chrome tidak ada, memakai Microsoft Edge.' } }
+  if (-not $exe) { Write-Result $false ('Browser ' + $KioskNames[$b] + ' tidak ditemukan di komputer ini.'); return }
+  $script:Browser = $b
+  $script:KioskExe = $exe
+  $script:KioskData = Get-KioskDataDir $b
+  $script:KioskMark = $script:KioskData
+  $name = $KioskNames[$b]
+  Write-AutoLog ('Penjaga situs terkunci: ' + $Url + ' di ' + $name + ' (' + $exe + ')')
+  $reported = $false
+  $launched = $false
+  $start = Get-Date
+  $relaunch = 0
+  $refocus = 0
+  $away = 0
+  $lastNote = [datetime]::MinValue
+  $loops = 0
+  while ($true) {
+    $loops++
+    if ($script:KioskMaxLoops -gt 0 -and $loops -gt $script:KioskMaxLoops) { break }
+    $pids = @(Get-KioskProcs)
+    if ($pids.Count -eq 0) {
+      if ($launched) { $relaunch++; Write-AutoLog ('Browser ditutup, situs dibuka lagi (ke-' + $relaunch + ').') }
+      [void](Start-KioskBrowser)
+      $launched = $true
+      Start-Sleep -Milliseconds 2000
+      continue
+    }
+    $launched = $true
+    if ($script:NativeState -eq 0) { [void](Initialize-Native) }   # setelah browser terbuka, agar tidak menunda
+    $hw = Get-KioskWindow $pids
+    if (-not $reported) {
+      if ($hw -ne 0) {
+        $t = 'Situs dibuka terkunci layar penuh di ' + $name + '. Siswa tidak bisa keluar; tutup dengan #Tutup Browser.'
+        if ($hw -lt 0) { $t += ' (Penjagaan jendela depan tidak aktif di komputer ini.)' }
+        Write-Result $true $t
+        $reported = $true
+      } elseif (((Get-Date) - $start).TotalSeconds -gt 30) {
+        Write-Result $false ('Browser ' + $name + ' berjalan tetapi jendelanya belum muncul setelah 30 detik.')
+        $reported = $true
+      }
+    }
+    if ($hw -gt 0) {
+      $fg = Get-ForegroundInfo
+      if ($fg.pid -gt 0 -and $pids -notcontains $fg.pid -and $KioskAllow -notcontains $fg.name) { $away++ } else { $away = 0 }
+      if ($away -ge 2) {
+        Set-KioskFront $hw
+        $refocus++
+        $away = 0
+        if (((Get-Date) - $lastNote).TotalSeconds -gt 30) { Write-AutoLog ('Siswa membuka "' + $fg.name + '", situs dikembalikan ke depan (total ' + $refocus + 'x).'); $lastNote = Get-Date }
+      }
+    }
+    Start-Sleep -Milliseconds 700
+  }
+}
+
 # ---------------- mulai ----------------
 if ($MyInvocation.InvocationName -eq '.') { return }   # dimuat untuk pengujian
 if ($Mode -eq 'open' -and -not $Job) { try { Remove-Item -LiteralPath $LogFile -Force -ErrorAction SilentlyContinue } catch {} }
@@ -678,6 +832,9 @@ if ($Mode -eq 'open' -and $Exe) {
   }
 }
 if ($Mode -eq 'open' -and $Rules.Count -eq 0) { Write-AutoLog 'Tidak ada aturan klik.'; exit 0 }
+
+# ================= MODE KIOSK (tidak butuh UI Automation) =================
+if ($Mode -eq 'kiosk') { Start-KioskGuard; exit 0 }
 
 try { Initialize-Uia } catch {
   Write-AutoLog ('UI Automation tidak tersedia, klik otomatis dilewati: ' + $_.Exception.Message)

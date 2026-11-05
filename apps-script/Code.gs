@@ -17,7 +17,7 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.7.0';
+var APP_VERSION = '1.8.0';
 
 var SHEETS = {
   EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
@@ -36,6 +36,7 @@ var ACTIONS = {
   message: '#Kirim Pesan',
   open_url: '#Buka Situs',
   fullscreen: '#Layar Penuh Browser',
+  close_browser: '#Tutup Browser',
   update_agent: '#Perbarui Agen',
   list_procs: '#Cek Proses'
 };
@@ -312,7 +313,7 @@ function agentCheckin_(b) {
   c.put('hb_' + id, JSON.stringify({
     t: now, user: str_(b.user, 120), exam: !!b.exam,
     ep: str_(b.exp, 260), eok: !!b.eok, ecfg: !!b.ecfg, ver: str_(b.ver, 20),
-    epl: str_(b.epl, 200), edir: str_(b.edir, 260)
+    epl: str_(b.epl, 200), edir: str_(b.edir, 260), kio: str_(b.kio, 300)
   }), 21600);
   var ep = ensureEndpoint_(id, b, s);
 
@@ -505,8 +506,12 @@ function createJob_(d) {
   if (a === 'open_url') {
     params.url = str_(d.params && d.params.url, 500).trim();
     if (!/^https?:\/\//i.test(params.url)) throw new Error('URL harus diawali http:// atau https://');
-    if (d.params && d.params.full) params.full = true;
+    var view = String((d.params && d.params.view) || (d.params && d.params.full ? 'full' : 'normal'));
+    params.view = view === 'lock' || view === 'full' ? view : 'normal';
+    if (params.view === 'full') params.full = true;   // agar dimengerti agen versi lama
+    if (params.view === 'lock') params.browser = d.params && d.params.browser === 'chrome' ? 'chrome' : 'edge';
   }
+  if (a === 'close_browser') params.mode = d.params && d.params.mode === 'all' ? 'all' : 'kiosk';
   if (a === 'fullscreen') params.mode = d.params && d.params.mode === 'off' ? 'off' : 'on';
   var map = epMap_();
   var seen = {};
@@ -719,6 +724,7 @@ function endpointsView_() {
       examOk: online && h.ecfg ? !!h.eok : null,
       examProcs: online && h.epl ? String(h.epl) : '',
       examDir: h ? (h.edir || '') : '',
+      kiosk: online && h.kio ? String(h.kio) : '',
       agentOld: verLt_((h && h.ver) || e.ver, '1.1.0')
     };
   });

@@ -159,10 +159,21 @@ Urutan yang dicoba agen: lokasi khusus komputer itu → daftar lokasi umum → p
 | #Shutdown / #Restart | `shutdown.exe /s` atau `/r /f /t 5` |
 | #Log Off / #Kunci Layar | Keluar dari akun / kunci layar |
 | #Kirim Pesan | Pop-up pesan di layar siswa |
-| #Buka Situs | Membuka URL di browser bawaan; centang *Langsung tampilkan layar penuh* agar langsung F11 |
+| #Buka Situs | Membuka URL. Tampilan: *Biasa*, *Layar penuh* (F11, siswa masih bisa keluar), atau **Layar penuh terkunci** (lihat di bawah) |
 | #Layar Penuh Browser | Menjadikan browser yang sedang terbuka (Chrome, Edge, Firefox, Opera, Brave) layar penuh seperti menekan F11, atau keluar dari layar penuh. Browser yang sudah layar penuh tidak diubah |
+| #Tutup Browser | Menutup situs layar penuh terkunci beserta penjaganya, atau semua browser di komputer siswa |
 | #Perbarui Agen | Mengunduh ulang agen terbaru dari backend |
 | #Cek Proses | Daftar program yang berjalan di komputer siswa; yang dikenali sebagai Exam Browser bertanda `[EXAM]` |
+
+### Situs layar penuh terkunci
+
+Pilih **#Buka Situs → Tampilan: Layar penuh terkunci**. Situs dibuka di Microsoft Edge (atau Google Chrome) **mode kiosk**: tanpa address bar, F11/Esc tidak berfungsi. Selama terkunci, penjaga kecil berjalan di komputer siswa:
+
+- browser ditutup siswa (Alt+F4, Task Manager) → situs langsung dibuka lagi;
+- siswa pindah jendela (Alt+Tab, tombol Windows, Win+D) → situs dikembalikan ke depan dalam ±1–2 detik;
+- penjaga dimatikan → agen menjalankannya lagi.
+
+Kiosk memakai profil browser terpisah, jadi browser biasa siswa tidak terganggu. Endpoint yang sedang terkunci ditandai **Situs terkunci** di tabel Endpoint. Proktor menutupnya dengan **#Tutup Browser**. Setelah komputer dinyalakan ulang, situs terkunci tidak dibuka lagi otomatis. Catatan: Ctrl+Alt+Del tetap bisa dipakai siswa (dibatasi Windows), tetapi browser yang ditutup lewat Task Manager akan terbuka kembali.
 
 Demi keamanan, panel hanya bisa menjalankan skrip di atas (tidak ada skrip bebas), sehingga link panel yang bocor tidak bisa dipakai menjalankan perintah sembarangan di komputer lab.
 

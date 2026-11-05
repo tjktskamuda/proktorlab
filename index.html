@@ -224,6 +224,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .chip.Selesai { background: var(--ok-soft); color: var(--ok); }
 .chip.Berjalan { background: var(--info-soft); color: var(--info); }
 .chip.Terjadwal { background: var(--warn-soft); color: var(--warn); }
+.chip.lock { background: var(--info-soft); color: var(--info); }
 .bar { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--idle-soft); min-width: 120px; }
 .bar i { display: block; height: 100%; }
 .bar .Berhasil { background: var(--ok); } .bar .Gagal { background: var(--bad); } .bar .Diterima { background: var(--info); }
@@ -380,10 +381,14 @@ var SCRIPTS = [
   { id: 'open_url', name: '#Buka Situs', icon: 'globe', win: 30,
     desc: 'Membuka alamat web di browser bawaan komputer, bisa langsung layar penuh.',
     params: [{ key: 'url', label: 'Alamat URL', type: 'text', ph: 'https://' },
-      { key: 'full', label: 'Langsung tampilkan layar penuh (seperti menekan F11)', type: 'check', def: false }] },
+      { key: 'view', label: 'Tampilan', type: 'select', def: 'normal', options: [['normal', 'Biasa'], ['full', 'Layar penuh (siswa masih bisa keluar dengan F11)'], ['lock', 'Layar penuh terkunci (siswa tidak bisa keluar)']] },
+      { key: 'browser', label: 'Browser untuk layar penuh terkunci', type: 'select', def: 'edge', showIf: ['view', 'lock'], options: [['edge', 'Microsoft Edge (ada di semua Windows)'], ['chrome', 'Google Chrome (jika terpasang)']] }] },
   { id: 'fullscreen', name: '#Layar Penuh Browser', icon: 'expand', win: 30,
     desc: 'Menjadikan browser yang sedang terbuka di komputer siswa tampil layar penuh (seperti menekan F11), atau mengembalikannya ke tampilan biasa.',
     params: [{ key: 'mode', label: 'Pilihan', type: 'select', def: 'on', options: [['on', 'Jadikan layar penuh'], ['off', 'Keluar dari layar penuh']] }] },
+  { id: 'close_browser', name: '#Tutup Browser', icon: 'x', win: 30,
+    desc: 'Menutup situs yang dibuka terkunci layar penuh lewat #Buka Situs (penjaganya ikut berhenti), atau menutup semua browser di komputer siswa.',
+    params: [{ key: 'mode', label: 'Yang ditutup', type: 'select', def: 'kiosk', options: [['kiosk', 'Situs layar penuh terkunci'], ['all', 'Semua browser (termasuk situs terkunci)']] }] },
   { id: 'update_agent', name: '#Perbarui Agen', icon: 'refresh', win: 120,
     desc: 'Mengunduh ulang agen ProktorLab terbaru dari server ini, lalu memulai ulang agen.' },
   { id: 'list_procs', name: '#Cek Proses', icon: 'search', win: 15,
@@ -402,6 +407,10 @@ var PRESETS = {
   edge: { label: 'Microsoft Edge mode kiosk', path: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', args: '--kiosk https://cbt.sekolah.sch.id --edge-kiosk-type=fullscreen --no-first-run', proc: 'msedge' },
   custom: { label: 'Kustom (isi sendiri)', path: '', args: '', proc: '' }
 };
+function viewText(p) {
+  var v = p.view || (p.full ? 'full' : 'normal');
+  return v === 'lock' ? ' (layar penuh terkunci, ' + (p.browser === 'chrome' ? 'Chrome' : 'Edge') + ')' : v === 'full' ? ' (layar penuh)' : '';
+}
 function verLess(a, b) {
   // hanya bandingkan nomor versi yang valid (mis. 1.5.0); data lain tidak dianggap versi lama
   a = String(a || '').trim(); b = String(b || '').trim();
@@ -746,12 +755,17 @@ var Demo = (function () {
         return setRow(job, epId, 'Berhasil', 'Pesan ditampilkan ke ' + user + '.');
       case 'open_url':
         if (!user) return setRow(job, epId, 'Gagal', noUser);
-        return setRow(job, epId, 'Berhasil', 'Situs dibuka untuk ' + user + '.' + (job.params.full ? ' Browser Google Chrome sekarang layar penuh.' : ''));
+        if (job.params.view === 'lock') { e.kiosk = job.params.url; return setRow(job, epId, 'Berhasil', 'Situs dibuka terkunci layar penuh di ' + (job.params.browser === 'chrome' ? 'Google Chrome' : 'Microsoft Edge') + '. Siswa tidak bisa keluar; tutup dengan #Tutup Browser.'); }
+        return setRow(job, epId, 'Berhasil', 'Situs dibuka untuk ' + user + '.' + (job.params.view === 'full' || job.params.full ? ' Browser Google Chrome sekarang layar penuh.' : ''));
+      case 'close_browser': {
+        var had = e.kiosk; e.kiosk = '';
+        return setRow(job, epId, 'Berhasil', (had ? 'Situs terkunci ditutup (' + had + '). ' : job.params.mode === 'all' ? '' : 'Tidak ada situs terkunci yang terbuka. ') + (job.params.mode === 'all' ? 'Semua browser ditutup (6 proses).' : ''));
+      }
       case 'fullscreen':
         if (!user) return setRow(job, epId, 'Gagal', noUser);
         return setRow(job, epId, 'Berhasil', job.params.mode === 'off' ? 'Browser Google Chrome keluar dari layar penuh.' : 'Browser Google Chrome ("Ujian - Google Chrome") sekarang layar penuh.');
       case 'update_agent':
-        e.ver = '1.7.0'; return setRow(job, epId, 'Berhasil', 'Agen diperbarui, memulai ulang agen...');
+        e.ver = '1.8.0'; return setRow(job, epId, 'Berhasil', 'Agen diperbarui, memulai ulang agen...');
       case 'list_procs': {
         var exd = demoExam(e);
         var lines = ['Pengguna: ' + (user || '-') + '. Folder Exam Browser: ' + (exd.path ? exd.path.replace(/\\[^\\]+$/, '') : '-') + '. Nama proses dikenali: SafeExamBrowser*, runningexam.'];
@@ -1468,7 +1482,8 @@ VIEWS.eps = {
         '<td class="muted cm">' + esc(e.comment || 'None') + '</td>' +
         '<td class="user">' + (e.user ? esc(e.user) : '<span class="muted">' + (e.online ? 'Tidak ada yang login' : '-') + '</span>') + '</td>' +
         '<td><span class="st ' + (e.online ? 'on' : 'off') + '">' + (e.online ? 'Terhubung' : 'Terputus') + '</span></td>' +
-        '<td>' + (e.exam ? '<span class="chip run">Berjalan</span>' : '<span class="chip no">' + (e.online ? 'Tidak' : '-') + '</span>') + '</td>' +
+        '<td>' + (e.exam ? '<span class="chip run">Berjalan</span>' : '<span class="chip no">' + (e.online ? 'Tidak' : '-') + '</span>') +
+          (e.kiosk ? ' <span class="chip lock" title="' + esc(e.kiosk) + '">Situs terkunci</span>' : '') + '</td>' +
         '<td class="nowrap">' + examCell(e) + '</td>' +
         '<td class="mono nowrap">' + esc(e.ip || '-') + '</td>' +
         '<td class="mono nowrap">' + esc(e.mac || '-') + '</td>' +
@@ -1515,6 +1530,7 @@ function epDetail(id) {
     '<button class="x" data-act="close">' + icon('x') + '</button></div><div class="mb">' +
     '<dl class="kv"><dt>Grup</dt><dd>' + esc(e.group) + '</dd><dt>User</dt><dd>' + esc(e.user || '-') + '</dd>' +
     '<dt>Exam Browser</dt><dd>' + (e.exam ? '<span class="chip run">Berjalan</span>' : 'Tidak berjalan') + '</dd>' +
+    (e.kiosk ? '<dt>Situs terkunci</dt><dd><span class="chip lock">Terkunci</span> <span class="mono" style="overflow-wrap:anywhere">' + esc(e.kiosk) + '</span></dd>' : '') +
     '<dt>Lokasi Exam</dt><dd id="ep-exam-status" data-id="' + esc(e.id) + '">' + examStatusHtml(e) + '</dd>' +
     '<dt>Proses Exam</dt><dd id="ep-exam-procs" data-id="' + esc(e.id) + '">' + examProcsHtml(e) + '</dd>' +
     '<dt>Alamat IP</dt><dd class="mono">' + esc(e.ip || '-') + '</dd><dt>MAC</dt><dd class="mono">' + esc(e.mac || '-') + '</dd>' +
@@ -1598,7 +1614,8 @@ VIEWS.job = {
     var failed = rows.filter(function (x) { return x.status === 'Gagal' || x.status === 'Kedaluwarsa'; }).map(function (x) { return x.ep; });
     var sc = SCRIPT[j.action] || {};
     var ptxt = !j.params ? '' : j.action === 'fullscreen' ? (j.params.mode === 'off' ? 'Keluar dari layar penuh' : 'Jadikan layar penuh')
-      : (j.params.text || j.params.url || '') + (j.params.url && j.params.full ? ' (layar penuh)' : '');
+      : j.action === 'close_browser' ? (j.params.mode === 'all' ? 'Semua browser' : 'Situs layar penuh terkunci')
+      : (j.params.text || j.params.url || '') + (j.params.url ? viewText(j.params) : '');
     var params = ptxt ? '<dt>Parameter</dt><dd>' + esc(ptxt) + '</dd>' : '';
     $('#view').innerHTML =
       '<div class="page-h"><div><h1>' + esc(j.script) + (sc.sub ? ' <span class="muted" style="font-weight:500;font-size:15px">' + esc(sc.sub) + '</span>' : '') + '</h1>' +
@@ -1982,7 +1999,12 @@ var Wizard = {
     var sc = SCRIPT[d.action];
     if (!sc || !sc.params) { el.innerHTML = ''; return; }
     sc.params.forEach(function (p) { if (d.params[p.key] === undefined && p.def !== undefined) d.params[p.key] = p.def; });
+    // pilihan dari skrip lain yang tidak berlaku lagi dikembalikan ke bawaan
+    sc.params.forEach(function (p) {
+      if (p.type === 'select' && !p.options.some(function (o) { return o[0] === d.params[p.key]; })) d.params[p.key] = p.def;
+    });
     el.innerHTML = sc.params.map(function (p) {
+      if (p.showIf && d.params[p.showIf[0]] !== p.showIf[1]) return '';
       var v = esc(d.params[p.key] || '');
       if (p.type === 'check') {
         return '<label class="radio" style="font-size:13.5px;margin-top:10px"><input type="checkbox" data-c="' + p.key + '"' + (d.params[p.key] ? ' checked' : '') + '><span>' + esc(p.label) + '</span></label>';
@@ -1996,9 +2018,11 @@ var Wizard = {
         ? '<textarea class="inp" data-p="' + p.key + '" maxlength="500" placeholder="' + esc(p.ph) + '">' + v + '</textarea>'
         : '<input class="inp" data-p="' + p.key + '" maxlength="500" placeholder="' + esc(p.ph) + '" value="' + v + '">') + '</label>';
     }).join('');
+    var self = this;
     $$('[data-p]', el).forEach(function (i) {
       var upd = function () { d.params[this.getAttribute('data-p')] = this.value; };
       i.addEventListener('input', upd); i.addEventListener('change', upd);
+      if (i.tagName === 'SELECT') i.addEventListener('change', function () { self.params(); });   // tampilkan/sembunyikan pilihan terkait
     });
     $$('[data-c]', el).forEach(function (i) { i.addEventListener('change', function () { d.params[this.getAttribute('data-c')] = this.checked; }); });
   },
@@ -2071,8 +2095,9 @@ var Wizard = {
       var whenTxt = d.when === 'now' ? 'sekarang' : 'pada ' + fLong(zEpoch(d.date, d.time)) + ' pukul ' + d.time + ' ' + tz;
       $('#wz-sum').innerHTML = '<b>' + esc(sc.name) + '</b> akan dijalankan di <b>' + n + ' endpoint</b> ' + esc(whenTxt) + '.' +
         (d.params.text && d.action === 'message' ? '<div style="margin-top:6px">Pesan: “' + esc(d.params.text) + '”</div>' : '') +
-        (d.params.url && d.action === 'open_url' ? '<div style="margin-top:6px">URL: ' + esc(d.params.url) + (d.params.full ? ' (layar penuh)' : '') + '</div>' : '') +
-        (d.action === 'fullscreen' ? '<div style="margin-top:6px">' + (d.params.mode === 'off' ? 'Keluar dari layar penuh' : 'Jadikan layar penuh') + '</div>' : '');
+        (d.params.url && d.action === 'open_url' ? '<div style="margin-top:6px">URL: ' + esc(d.params.url) + esc(viewText(d.params)) + '</div>' : '') +
+        (d.action === 'fullscreen' ? '<div style="margin-top:6px">' + (d.params.mode === 'off' ? 'Keluar dari layar penuh' : 'Jadikan layar penuh') + '</div>' : '') +
+        (d.action === 'close_browser' ? '<div style="margin-top:6px">' + (d.params.mode === 'all' ? 'Menutup semua browser' : 'Menutup situs layar penuh terkunci') + '</div>' : '');
     };
     $$('input, select', el).forEach(function (i) { i.addEventListener('input', upd); i.addEventListener('change', upd); });
     upd();

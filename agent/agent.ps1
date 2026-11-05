@@ -6,8 +6,8 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.7.0'
-$AutopilotVersion = '1.6.0'
+$AgentVersion = '1.8.0'
+$AutopilotVersion = '1.7.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -76,6 +76,9 @@ $Acks      = New-Object System.Collections.ArrayList
 $Notes     = New-Object System.Collections.ArrayList
 $Follows   = New-Object System.Collections.ArrayList
 $FollowAt  = [datetime]::MinValue
+$Kiosk     = $null
+$KioskCheckAt = [datetime]::MinValue
+$KioskStartAt = [datetime]::MinValue
 $FailCount = 0
 $NextCheck = Get-Date
 $NextClean = (Get-Date).AddSeconds(20)
@@ -83,7 +86,7 @@ $Restart   = $false
 
 function Save-State {
   try {
-    $o = @{ done = @($Done | Select-Object -Last 300); results = @($Results); notes = @($Notes); examFound = $script:ExamFound; examLearned = @($ExamLearned) }
+    $o = @{ done = @($Done | Select-Object -Last 300); results = @($Results); notes = @($Notes); examFound = $script:ExamFound; examLearned = @($ExamLearned); kiosk = $script:Kiosk }
     [IO.File]::WriteAllText($StateFile, (ConvertTo-Json -InputObject $o -Depth 5 -Compress), (New-Object Text.UTF8Encoding($false)))
   } catch { Write-Log ('Gagal simpan state: ' + $_.Exception.Message) }
 }
@@ -100,6 +103,10 @@ function Load-State {
     }
     foreach ($r in @($s.notes)) {
       if ($r -and $r.id) { [void]$Notes.Add(@{ id = [string]$r.id; s = [string]$r.s; o = [string]$r.o }) }
+    }
+    # situs terkunci tetap dijaga setelah agen dimulai ulang, tetapi tidak setelah komputer dinyalakan ulang
+    if ($s.kiosk -and $s.kiosk.url -and [string]$s.kiosk.boot -eq (Get-BootId)) {
+      $script:Kiosk = @{ url = [string]$s.kiosk.url; browser = [string]$s.kiosk.browser; boot = [string]$s.kiosk.boot }
     }
   } catch { Write-Log 'state.json rusak, diabaikan.' }
 }
@@ -637,6 +644,93 @@ function Invoke-Fullscreen([string]$want, [int]$delay) {
   } catch { return @{ s = 'err'; o = $line } }
 }
 
+# ---------- situs layar penuh terkunci (mode kiosk) ----------
+$BrowserNames = @('chrome', 'msedge', 'firefox', 'opera', 'brave', 'vivaldi', 'iexplore')
+
+function Get-BootId {
+  try { return ([datetime](Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime).ToString('yyyyMMddHHmm') } catch {}
+  try { return (Get-Date).AddMilliseconds(-[Environment]::TickCount64).ToString('yyyyMMddHHmm') } catch {}
+  return ''
+}
+
+# proses yang baris perintahnya memuat teks tertentu
+function Get-ProcsByCmd([string[]]$names, [string]$mark) {
+  $out = @()
+  $list = $null
+  try {
+    $f = ($names | ForEach-Object { "Name='" + $_ + "'" }) -join ' OR '
+    $list = @(Get-CimInstance Win32_Process -Filter $f -Property ProcessId, CommandLine -ErrorAction Stop | ForEach-Object { @{ id = [int]$_.ProcessId; cmd = [string]$_.CommandLine } })
+  } catch {
+    $bare = @($names | ForEach-Object { $_ -replace '\.exe$', '' })
+    $list = @(Get-Process -Name $bare -ErrorAction SilentlyContinue | ForEach-Object { $cl = ''; try { $cl = [string]$_.CommandLine } catch {}; @{ id = [int]$_.Id; cmd = $cl } })
+  }
+  foreach ($x in $list) { if ($x.id -ne $PID -and $x.cmd -and $x.cmd.Contains($mark)) { $out += $x.id } }
+  return $out
+}
+
+function Get-KioskGuards { return @(Get-ProcsByCmd @('powershell.exe', 'pwsh.exe') 'PL-kiosk-') }
+
+# hentikan penjaga lalu browser kiosk; @{ guard; browser } = jumlah proses yang dihentikan
+function Stop-Kiosk {
+  $g = @(Get-KioskGuards)
+  foreach ($id in $g) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+  if ($g.Count) { Start-Sleep -Milliseconds 400 }
+  $b = @(Get-ProcsByCmd @('msedge.exe', 'chrome.exe') 'ProktorLab-kiosk-')
+  foreach ($id in $b) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+  return @{ guard = $g.Count; browser = $b.Count }
+}
+
+function Stop-AllBrowsers {
+  $n = 0
+  foreach ($pr in @(Get-Process -Name $BrowserNames -ErrorAction SilentlyContinue)) {
+    if ($pr.SessionId -eq 0 -and $env:SystemRoot) { continue }
+    try { Stop-Process -Id $pr.Id -Force -ErrorAction Stop; $n++ } catch {}
+  }
+  return $n
+}
+
+function Start-KioskGuard {
+  $job = @{ mode = 'kiosk'; url = [string]$script:Kiosk.url; browser = [string]$script:Kiosk.browser; timeout = 0 }
+  $script:KioskStartAt = Get-Date
+  return (Start-Autopilot $job 'kiosk' -Quiet)
+}
+
+function Start-Kiosk([string]$url, [string]$browser) {
+  if ($browser -ne 'chrome') { $browser = 'edge' }
+  [void](Stop-Kiosk)
+  $script:Kiosk = @{ url = $url; browser = $browser; boot = (Get-BootId) }
+  Save-State
+  $log = Start-KioskGuard
+  $line = ''
+  for ($w = 0; $w -lt 80; $w++) {
+    Start-Sleep -Milliseconds 500
+    $line = [string](@(Read-RunLog $log 40) | Where-Object { $_ -match 'HASIL \{' } | Select-Object -Last 1)
+    if ($line) { break }
+  }
+  if (-not $line) {
+    $lines = @(Read-RunLog $log 5)
+    if ($lines.Count -eq 0) { return @{ s = 'err'; o = 'Penjaga situs terkunci tidak berjalan di komputer ini (tidak ada catatan). Kemungkinan diblokir antivirus atau kebijakan Windows.' } }
+    return @{ s = 'err'; o = ('Situs terkunci belum terbuka. Catatan terakhir: ' + ($lines -join ' | ')) }
+  }
+  try {
+    $o = $line.Substring($line.IndexOf('HASIL ') + 6) | ConvertFrom-Json
+    if (-not $o.ok) { $script:Kiosk = $null; Save-State; [void](Stop-Kiosk); return @{ s = 'err'; o = [string]$o.msg } }
+    return @{ s = 'ok'; o = [string]$o.msg }
+  } catch { return @{ s = 'err'; o = $line } }
+}
+
+# penjaga mati (mis. dihentikan lewat Task Manager) -> jalankan lagi
+function Invoke-KioskWatch {
+  if (-not $script:Kiosk) { return }
+  if ((Get-Date) -lt $script:KioskCheckAt) { return }
+  $script:KioskCheckAt = (Get-Date).AddSeconds(6)
+  if (((Get-Date) - $script:KioskStartAt).TotalSeconds -lt 15) { return }
+  if (-not (Get-LoggedUser)) { return }
+  if (@(Get-KioskGuards).Count -gt 0) { return }
+  Write-Log ('Penjaga situs terkunci tidak berjalan, dijalankan lagi (' + $script:Kiosk.url + ').')
+  try { [void](Start-KioskGuard) } catch { Write-Log ('Gagal menjalankan penjaga: ' + $_.Exception.Message) }
+}
+
 # Buka file Exam Browser di sesi pengguna.
 #  - .exe + Administrator (atau tanpa VBScript): dijalankan langsung oleh Task Scheduler
 #  - selain itu lewat shell Windows (sama seperti klik dua kali; UAC muncul bila perlu)
@@ -759,6 +853,7 @@ function Invoke-Checkin {
     results = $sendResults; acks = $sendAcks; notes = $sendNotes
     exp = $script:ExamUsed; eok = [bool]$script:ExamUsed; ecfg = [bool]$script:ExamSig
     epl = ($examNames -join ','); edir = $(if ($script:ExamDirDetect) { Get-ExamDir } else { '' })
+    kio = $(if ($script:Kiosk) { [string]$script:Kiosk.url } else { '' })
   }
   $t0 = Get-NowMs
   $res = Invoke-Api $body
@@ -1028,8 +1123,16 @@ function Invoke-Job($j) {
       'open_url' {
         $url = [string]$p.url
         if ($url -notmatch '^https?://') { throw 'URL harus diawali http:// atau https://' }
+        $view = [string]$p.view
+        if (-not $view) { $view = $(if ($p.full) { 'full' } else { 'normal' }) }
+        if ($view -eq 'lock') {
+          # layar penuh terkunci: mode kiosk + penjaga di sesi siswa
+          $kr = Start-Kiosk $url ([string]$p.browser)
+          Add-Result $jid $kr.s $kr.o
+          return
+        }
         $u = Invoke-AsUser '' 'url' -Exe 'explorer.exe' -Arguments ('"' + $url + '"')
-        if ($p.full) {
+        if ($view -eq 'full') {
           # tunggu browser menampilkan situsnya, lalu jadikan layar penuh
           $fr = Invoke-Fullscreen 'on' 3
           Add-Result $jid $fr.s ('Situs dibuka untuk ' + $u + '. ' + $fr.o)
@@ -1040,8 +1143,27 @@ function Invoke-Job($j) {
       'fullscreen' {
         $want = 'on'
         if ([string]$p.mode -eq 'off') { $want = 'off' }
+        if ($script:Kiosk -and $want -eq 'off') {
+          Add-Result $jid 'err' ('Situs ' + $script:Kiosk.url + ' sedang dibuka terkunci, sehingga tidak bisa keluar dari layar penuh. Tutup dengan #Tutup Browser.')
+          return
+        }
         $fr = Invoke-Fullscreen $want 0
         Add-Result $jid $fr.s $fr.o
+      }
+      'close_browser' {
+        $all = ([string]$p.mode -eq 'all')
+        $had = $script:Kiosk
+        $script:Kiosk = $null
+        Save-State
+        $k = Stop-Kiosk
+        $msg = ''
+        if ($had -or $k.browser -gt 0) { $msg = 'Situs terkunci ditutup' + $(if ($had) { ' (' + $had.url + ')' } else { '' }) + '. ' }
+        elseif (-not $all) { $msg = 'Tidak ada situs terkunci yang terbuka. ' }
+        if ($all) {
+          $n = Stop-AllBrowsers
+          if ($n -gt 0) { $msg += 'Semua browser ditutup (' + $n + ' proses).' } else { $msg += 'Tidak ada browser lain yang terbuka.' }
+        }
+        Add-Result $jid 'ok' $msg.Trim()
       }
       'update_agent' {
         $sep = '?'
@@ -1099,6 +1221,7 @@ try {
     }
     Invoke-DueJobs
     Invoke-Follows
+    Invoke-KioskWatch
     if ((Get-Date) -ge $NextClean) { Clear-RunTasks; $NextClean = (Get-Date).AddSeconds(60) }
     Start-Sleep -Milliseconds 500
   }
