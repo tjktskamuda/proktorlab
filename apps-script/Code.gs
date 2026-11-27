@@ -17,7 +17,7 @@
  *    GET  ?f=install|bat|agent|uninstall&k=KUNCI -> berkas agen
  * ============================================================
  */
-var APP_VERSION = '1.8.0';
+var APP_VERSION = '1.9.0';
 
 var SHEETS = {
   EP:   { name: 'Endpoint', head: ['ID', 'Nama', 'Grup', 'Keterangan', 'User Terakhir', 'IP', 'MAC', 'Broadcast', 'OS', 'Versi Agen', 'Terdaftar', 'Terakhir Online', 'Lokasi Exam Khusus'] },
@@ -115,6 +115,8 @@ function doPost(e) {
     var b = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (b && b.a === 'checkin') {
       out = b.k === getKey_() ? agentCheckin_(b) : { ok: false, error: 'Kunci agen salah' };
+    } else if (b && b.a === 'rframe') {
+      out = remoteAgent_(b);   // pembantu remote di komputer siswa (diautentikasi dengan ID sesi)
     } else if (b && b.action) {
       out = { ok: true, data: handleApi_(b) };
     } else {
@@ -220,9 +222,177 @@ function handleApi_(req) {
     case 'regenKey': return regenKey_();
     case 'changePassword': return changePassword_(d.old, d.password);
     case 'agentCode': return { code: AGENT_PS1 };
+    case 'remoteStart': return remoteStart_(d);
+    case 'remoteFrame': return remoteFrame_(d);
+    case 'remoteInput': return remoteInput_(d);
+    case 'remoteSet': return remoteSet_(d);
+    case 'remoteStop': return remoteStop_(d);
     case 'logout': cache_().remove('sess_' + req.token); return { ok: true };
   }
   throw new Error('Aksi tidak dikenal: ' + a);
+}
+
+/* =====================================================================
+ *  REMOTE (lihat & kendalikan layar komputer siswa dari jarak jauh)
+ *  Tidak ada koneksi langsung panel <-> komputer: gambar layar dan
+ *  perintah mouse/keyboard dititipkan di CacheService.
+ *    rs_<ID>              sesi aktif {sid, q, ctl, t0, seen, err}
+ *    rf_<ID>_m / _0.._5   gambar layar terakhir (dipecah per 90 KB)
+ *    ri_<ID>_<sid>_<n>    kiriman input ke-n dari panel; _top = n terakhir
+ * ===================================================================== */
+var RMT_IDLE = 25000;          // panel tidak meminta gambar selama ini -> sesi berakhir
+var RMT_PART = 90000;          // batas satu nilai CacheService 100 KB
+var RMT_PARTS = 6;
+var RMT_Q = {
+  hemat: { w: 960, q: 40, ms: 900 },
+  sedang: { w: 1280, q: 50, ms: 700 },
+  tajam: { w: 1600, q: 62, ms: 600 }
+};
+
+function rmtGet_(id) {
+  var c = cache_().get('rs_' + id);
+  if (!c) return null;
+  try { return JSON.parse(c); } catch (e) { return null; }
+}
+function rmtPut_(id, s) { cache_().put('rs_' + id, JSON.stringify(s), 900); }
+function rmtLive_(s) { return s && Date.now() - (s.seen || 0) < RMT_IDLE; }
+
+function remoteStart_(d) {
+  var id = normId_(d.id);
+  if (!id || !epMap_()[id]) throw new Error('Endpoint tidak ditemukan.');
+  var s = {
+    sid: Utilities.getUuid().replace(/-/g, '').slice(0, 20),
+    q: RMT_Q[d.q] ? d.q : 'sedang',
+    ctl: d.ctl !== false,
+    t0: Date.now(), seen: Date.now(), err: ''
+  };
+  rmtPut_(id, s);
+  cache_().remove('rf_' + id + '_m');
+  return { sid: s.sid, q: s.q, ctl: s.ctl, qualities: Object.keys(RMT_Q) };
+}
+
+function rmtSession_(d) {
+  var id = normId_(d.id);
+  var s = rmtGet_(id);
+  if (!s || s.sid !== String(d.sid || '')) return null;
+  s.id = id;
+  return s;
+}
+
+function remoteSet_(d) {
+  var s = rmtSession_(d);
+  if (!s) return { state: 'ended' };
+  if (d.q && RMT_Q[d.q]) s.q = d.q;
+  if (d.ctl !== undefined) s.ctl = !!d.ctl;
+  s.seen = Date.now();
+  var id = s.id; delete s.id;
+  rmtPut_(id, s);
+  return { ok: true, q: s.q, ctl: s.ctl };
+}
+
+function remoteStop_(d) {
+  var s = rmtSession_(d);
+  if (s) cache_().remove('rs_' + s.id);
+  return { ok: true };
+}
+
+/** Panel meminta gambar terbaru (sekaligus menandai sesi masih dipakai). */
+function remoteFrame_(d) {
+  var s = rmtSession_(d);
+  if (!s) return { state: 'ended' };
+  var id = s.id; delete s.id;
+  var now = Date.now();
+  s.seen = now;
+  rmtPut_(id, s);
+  var keys = ['rf_' + id + '_m'];
+  for (var i = 0; i < RMT_PARTS; i++) keys.push('rf_' + id + '_' + i);
+  var got = cache_().getAll(keys);
+  var m = null;
+  try { m = JSON.parse(got['rf_' + id + '_m'] || 'null'); } catch (e) {}
+  if (!m || m.sid !== s.sid) return { state: 'wait', since: now - s.t0, err: s.err || '', q: s.q, ctl: s.ctl };
+  var out = { state: 'live', seq: m.seq, age: now - m.at, alive: now - (m.ping || m.at), w: m.w, h: m.h, sw: m.sw, sh: m.sh,
+    cx: m.cx, cy: m.cy, desk: m.desk || '', q: s.q, ctl: s.ctl };
+  if (Number(d.have || 0) >= m.seq) return out;
+  var img = '';
+  for (var j = 0; j < m.n; j++) {
+    var part = got['rf_' + id + '_' + j] || '';
+    var tag = m.seq + '|';
+    if (part.indexOf(tag) !== 0) { out.seq = Number(d.have || 0); return out; }   // gambar sedang ditulis
+    img += part.slice(tag.length);
+  }
+  out.img = img;
+  return out;
+}
+
+/** Panel mengirim satu kumpulan input (klik, gulir, tombol, teks). */
+function remoteInput_(d) {
+  var s = rmtSession_(d);
+  if (!s) return { state: 'ended' };
+  if (!s.ctl) throw new Error('Sesi ini dalam mode lihat saja.');
+  var n = Math.floor(Number(d.n));
+  if (!(n > 0)) throw new Error('Nomor input tidak valid.');
+  var ev = [].concat(d.ev || []).slice(0, 200);
+  var base = 'ri_' + s.id + '_' + s.sid + '_';
+  var vals = {};
+  vals[base + n] = JSON.stringify(ev);
+  vals[base + 'top'] = String(n);
+  cache_().putAll(vals, 120);
+  return { ok: true, n: n };
+}
+
+/** Sesi remote untuk laporan agen (agen menjalankan/menghentikan pembantu layar). */
+function remoteForAgent_(id, err) {
+  var s = rmtGet_(id);
+  if (!rmtLive_(s)) return null;
+  if (err !== undefined && String(err || '') !== String(s.err || '')) { s.err = str_(err, 300); rmtPut_(id, s); }
+  return { sid: s.sid, q: s.q };
+}
+
+/** Pembantu remote mengirim gambar layar dan mengambil input baru. */
+function remoteAgent_(b) {
+  var id = normId_(b.id);
+  var s = rmtGet_(id);
+  if (!s || s.sid !== String(b.sid || '') || !rmtLive_(s)) return { ok: true, end: true };
+  var c = cache_();
+  var now = Date.now();
+  var mk = 'rf_' + id + '_m';
+  if (b.img) {
+    var img = String(b.img);
+    var n = Math.ceil(img.length / RMT_PART);
+    if (n > RMT_PARTS) return { ok: false, error: 'Gambar terlalu besar', big: true, cfg: RMT_Q[s.q] };
+    var seq = Math.floor(Number(b.seq)) || 1;
+    var vals = {};
+    for (var i = 0; i < n; i++) vals['rf_' + id + '_' + i] = seq + '|' + img.slice(i * RMT_PART, (i + 1) * RMT_PART);
+    vals[mk] = JSON.stringify({ sid: s.sid, seq: seq, n: n, at: now, ping: now, w: Number(b.w) || 0, h: Number(b.h) || 0,
+      sw: Number(b.sw) || 0, sh: Number(b.sh) || 0, cx: Number(b.cx), cy: Number(b.cy), desk: str_(b.desk, 40) });
+    c.putAll(vals, 120);
+  } else {
+    // layar tidak berubah: perbarui posisi kursor & tanda masih hidup saja
+    var m = null;
+    try { m = JSON.parse(c.get(mk) || 'null'); } catch (e) {}
+    if (m && m.sid === s.sid) {
+      m.ping = now; m.cx = Number(b.cx); m.cy = Number(b.cy); m.desk = str_(b.desk, 40);
+      c.put(mk, JSON.stringify(m), 120);
+    } else if (b.desk) {
+      c.put(mk, JSON.stringify({ sid: s.sid, seq: 0, n: 0, at: now, ping: now, desk: str_(b.desk, 40) }), 120);
+    }
+  }
+  if (s.err) { s.err = ''; rmtPut_(id, s); }
+  // input baru dari panel
+  var base = 'ri_' + id + '_' + s.sid + '_';
+  var top = Number(c.get(base + 'top') || 0);
+  var from = Math.max(0, Math.floor(Number(b.got) || 0));
+  var ev = [];
+  if (top > from) {
+    var keys = [];
+    for (var k = from + 1; k <= top && keys.length < 30; k++) keys.push(base + k);
+    var got = c.getAll(keys);
+    keys.forEach(function (key) { try { ev = ev.concat(JSON.parse(got[key] || '[]')); } catch (e) {} });
+    top = from + keys.length;
+  } else {
+    top = from;
+  }
+  return { ok: true, ev: s.ctl ? ev : [], got: top, ctl: s.ctl, cfg: RMT_Q[s.q] };
 }
 
 /** Versi agen yang disediakan backend ini (dibaca dari Agen.gs), untuk peringatan "agen versi lama". */
@@ -334,11 +504,13 @@ function agentCheckin_(b) {
   // laporan susulan (mis. hasil klik otomatis) untuk perintah yang sudah selesai
   var notes = [].concat(b.notes || []).filter(function (x) { return x && x.id; });
   if (notes.length) applyNotes_(id, notes);
+  var rmt = remoteForAgent_(id, b.rmx);
 
   return {
     ok: true,
     now: Date.now(),
     interval: s.interval,
+    rmt: rmt,
     cfg: examCfg_(s, ep, b.ver),
     jobs: q.filter(function (j) { return j.dl >= now; }).map(function (j) {
       return { id: j.id, a: j.a, p: j.p || {}, at: j.at, dl: j.dl };

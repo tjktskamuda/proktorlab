@@ -165,6 +165,18 @@ Urutan yang dicoba agen: lokasi khusus komputer itu → daftar lokasi umum → p
 | #Perbarui Agen | Mengunduh ulang agen terbaru dari backend |
 | #Cek Proses | Daftar program yang berjalan di komputer siswa; yang dikenali sebagai Exam Browser bertanda `[EXAM]` |
 
+### Remote layar (lihat & kendalikan dari jarak jauh)
+
+Klik ikon monitor di samping nama komputer (menu **Endpoint**) atau tombol **Remote layar** di detail endpoint. Layar komputer siswa tampil di panel dan bisa dikendalikan:
+
+- **mouse**: klik, klik ganda, klik kanan, seret, dan gulir langsung pada gambar;
+- **keyboard**: klik gambar lalu ketik; kombinasi yang ditangkap browser (Alt+Tab, Alt+F4, Win, Ctrl+Shift+Esc, Ctrl+C+B+L, dll.) dikirim lewat daftar **Kirim tombol…**; teks panjang lewat kotak di bawah;
+- **Kendalikan** dimatikan = hanya melihat; **kualitas** Hemat / Sedang / Tajam; tombol layar penuh.
+
+Cara kerjanya: tidak ada koneksi langsung antara panel dan komputer siswa, jadi remote tetap jalan dari mana saja (termasuk dari rumah) tanpa membuka port. Agen menjalankan pembantu kecil di sesi siswa yang mengirim gambar layar (JPEG, ±1 gambar/detik, hanya saat layar berubah) ke Apps Script, lalu menjalankan klik/ketikan dari panel. Karena lewat server, gambarnya tidak semulus aplikasi remote khusus (jeda ±1–2 detik). Di komputer siswa muncul ikon & pemberitahuan *"Proktor sedang melihat dan dapat mengendalikan komputer ini"*. Sesi berakhir saat panel ditutup (atau 25 detik tanpa panel).
+
+Batasan Windows: layar login/kunci, Ctrl+Alt+Del, dan jendela UAC tidak bisa dilihat atau dikendalikan. Perlu agen **v1.9.0** atau lebih baru. Setiap sesi memakai ±2–3 permintaan/detik ke Apps Script, jadi sebaiknya hanya beberapa remote berjalan bersamaan.
+
 ### Situs layar penuh terkunci
 
 Pilih **#Buka Situs → Tampilan: Layar penuh terkunci**. Situs dibuka di Microsoft Edge (atau Google Chrome) **mode kiosk**: tanpa address bar, F11/Esc tidak berfungsi. Selama terkunci, penjaga kecil berjalan di komputer siswa:

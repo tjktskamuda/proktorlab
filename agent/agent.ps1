@@ -6,8 +6,8 @@
 # Exam Browser, Wake on LAN, shutdown, restart, dll).
 # Jangan diedit manual; perbarui lewat panel (#Perbarui Agen).
 # ---------------------------------------------------------------
-$AgentVersion = '1.8.0'
-$AutopilotVersion = '1.7.0'
+$AgentVersion = '1.9.0'
+$AutopilotVersion = '1.8.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -77,6 +77,8 @@ $Notes     = New-Object System.Collections.ArrayList
 $Follows   = New-Object System.Collections.ArrayList
 $FollowAt  = [datetime]::MinValue
 $Kiosk     = $null
+$Remote    = $null
+$RemoteErr = ''
 $KioskCheckAt = [datetime]::MinValue
 $KioskStartAt = [datetime]::MinValue
 $FailCount = 0
@@ -731,6 +733,53 @@ function Invoke-KioskWatch {
   try { [void](Start-KioskGuard) } catch { Write-Log ('Gagal menjalankan penjaga: ' + $_.Exception.Message) }
 }
 
+# ---------- remote (lihat & kendalikan layar dari panel) ----------
+# Sesi dimulai dari panel; agen hanya menjalankan "pembantu layar" (autopilot
+# mode remote) di sesi siswa, yang langsung berkomunikasi dengan server.
+function Get-RemoteHelpers { return @(Get-ProcsByCmd @('powershell.exe', 'pwsh.exe') 'PL-remote-') }
+
+function Stop-RemoteHelper {
+  foreach ($p in @(Get-RemoteHelpers)) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }
+}
+
+function Update-Remote($rm) {
+  if (-not $rm -or -not $rm.sid) {
+    if ($script:Remote) {
+      # beri waktu pembantu berhenti sendiri (agar ikon pemberitahuannya ikut hilang)
+      if (-not $script:Remote.endAt) { $script:Remote.endAt = Get-Date; return }
+      if (((Get-Date) - $script:Remote.endAt).TotalSeconds -gt 8) {
+        Stop-RemoteHelper
+        Write-Log 'Sesi remote selesai.'
+        $script:Remote = $null
+        $script:RemoteErr = ''
+      }
+    }
+    return
+  }
+  $sid = [string]$rm.sid
+  if ($script:Remote -and $script:Remote.sid -eq $sid) {
+    $script:Remote.endAt = $null
+    if (((Get-Date) - $script:Remote.at).TotalSeconds -lt 20) { return }
+    if (@(Get-RemoteHelpers).Count -gt 0) { return }
+    Write-Log 'Pembantu remote tidak berjalan, dijalankan lagi.'
+  } elseif ($script:Remote) {
+    Stop-RemoteHelper
+  }
+  $script:Remote = @{ sid = $sid; at = Get-Date; endAt = $null }
+  if (-not (Get-LoggedUser)) {
+    $script:RemoteErr = 'Tidak ada pengguna yang login di komputer ini. Layar login tidak bisa di-remote.'
+    return
+  }
+  try {
+    [void](Start-Autopilot @{ mode = 'remote'; server = $Server; id = $Id; sid = $sid; q = [string]$rm.q; timeout = 0 } 'remote' -Quiet)
+    $script:RemoteErr = ''
+    Write-Log ('Sesi remote dimulai (' + [string]$rm.q + ').')
+  } catch {
+    $script:RemoteErr = 'Gagal menjalankan remote: ' + $_.Exception.Message
+  }
+  $script:NextCheck = (Get-Date).AddSeconds(3)
+}
+
 # Buka file Exam Browser di sesi pengguna.
 #  - .exe + Administrator (atau tanpa VBScript): dijalankan langsung oleh Task Scheduler
 #  - selain itu lewat shell Windows (sama seperti klik dua kali; UAC muncul bila perlu)
@@ -854,6 +903,7 @@ function Invoke-Checkin {
     exp = $script:ExamUsed; eok = [bool]$script:ExamUsed; ecfg = [bool]$script:ExamSig
     epl = ($examNames -join ','); edir = $(if ($script:ExamDirDetect) { Get-ExamDir } else { '' })
     kio = $(if ($script:Kiosk) { [string]$script:Kiosk.url } else { '' })
+    rmx = $script:RemoteErr
   }
   $t0 = Get-NowMs
   $res = Invoke-Api $body
@@ -870,6 +920,7 @@ function Invoke-Checkin {
   if ($sendResults.Count -gt 0 -or $sendNotes.Count -gt 0) { Save-State }
 
   $script:Offset = [double]$res.now - (($t0 + $t1) / 2)
+  try { Update-Remote $res.rmt } catch { Write-Log ('Remote: ' + $_.Exception.Message) }
   if ($res.interval) { $script:Interval = [math]::Max(3, [int]$res.interval) }
   if ($res.cfg) {
     $script:ExamPath = [string]$res.cfg.examPath

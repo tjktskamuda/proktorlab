@@ -251,6 +251,37 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .steps .s.on { border-color: var(--navy); color: var(--text); } .steps .s.on b { color: var(--navy-text); }
 .steps .s.done { border-color: var(--navy); } .steps .s.done b { color: var(--navy-text); }
 .steps .s span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ---------- remote layar ---------- */
+.rmt { position: fixed; inset: 0; z-index: 80; background: #0b0f17; color: #e6e9ef; display: flex; flex-direction: column; }
+.rmt-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #131a28; border-bottom: 1px solid #232d40; flex-wrap: wrap; }
+.rmt-bar .t { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32ch; }
+.rmt-bar .meta, .rmt-foot { color: #9aa6b8; font-size: 12.5px; }
+.rmt-bar .sp { flex: 1; }
+.rmt .btn.ghost { color: #e6e9ef; border-color: #33405a; background: transparent; }
+.rmt .btn.ghost:hover { background: #1c2538; }
+.rmt select.inp, .rmt input.inp { background: #0f1522; color: #e6e9ef; border-color: #33405a; width: auto; min-height: 34px; padding-top: 4px; padding-bottom: 4px; }
+.rmt-st { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; padding: 3px 9px; border-radius: 99px; background: #1c2538; color: #c9d2e0; white-space: nowrap; }
+.rmt-st::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #8a96aa; }
+.rmt-st.live { color: #8be3b0; } .rmt-st.live::before { background: #2fca7a; }
+.rmt-st.wait { color: #f3cf7a; } .rmt-st.wait::before { background: #e9b23b; }
+.rmt-st.end { color: #ff9c9c; } .rmt-st.end::before { background: #e5534b; }
+.rmt-stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; outline: none; overflow: hidden; touch-action: none; }
+.rmt-stage:focus-visible { box-shadow: inset 0 0 0 2px #5b7cfa; }
+.rmt-stage img { max-width: 100%; max-height: 100%; display: block; user-select: none; -webkit-user-drag: none; }
+.rmt-stage.ctl img { cursor: crosshair; }
+.rmt-stage img.dim { filter: brightness(.35) grayscale(.6); }
+.rmt-cur { position: absolute; width: 18px; height: 18px; pointer-events: none; margin: -1px 0 0 -1px; display: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.6)); }
+.rmt-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 24px; color: #c9d2e0; pointer-events: none; }
+.rmt-msg > * { pointer-events: auto; }
+.rmt-msg b { font-size: 16px; color: #fff; }
+.rmt-msg .muted { color: #9aa6b8; max-width: 560px; font-size: 13.5px; }
+.rmt-rip { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; border: 2px solid #7aa2ff; pointer-events: none; animation: rmtRip .55s ease-out forwards; }
+@keyframes rmtRip { from { transform: scale(.4); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+.rmt-foot { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #131a28; border-top: 1px solid #232d40; flex-wrap: wrap; }
+.rmt-foot input.inp { flex: 1 1 260px; min-width: 0; }
+.tbl .nm .rmt-ic { margin-left: 6px; color: var(--muted); padding: 2px 3px; border-radius: 4px; vertical-align: -3px; font-weight: 400; }
+.tbl .nm .rmt-ic:hover { color: var(--navy-text); background: var(--surface-2); text-decoration: none; }
+@media (max-width: 640px) { .rmt-bar .meta { display: none; } .rmt-bar .t { max-width: 18ch; } .rmt-foot > span { display: none; } }
 /* daftar skrip di wizard: menggulir sendiri, tidak pernah terpotong */
 .slist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow-y: auto; flex: 1 1 auto; min-height: 170px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .sitem { display: flex; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: flex-start; flex: none; }
@@ -637,6 +668,48 @@ function act(action, data, okMsg) {
 
 /* =============================== DEMO =============================== */
 var Demo = (function () {
+  /* layar tiruan untuk mencoba fitur remote di mode demo */
+  var dRm = {};
+  function demoScreen(r) {
+    var c = document.createElement('canvas'); c.width = 1280; c.height = 720;
+    var g = c.getContext('2d');
+    var bg = g.createLinearGradient(0, 0, 1280, 720); bg.addColorStop(0, '#1f4f8f'); bg.addColorStop(1, '#0d2a4f');
+    g.fillStyle = bg; g.fillRect(0, 0, 1280, 720);
+    g.font = '13px Segoe UI, Arial'; g.textAlign = 'center';
+    [['Recycle Bin', 40], ['Exambrowser', 130], ['Chrome', 220]].forEach(function (it) {
+      g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(28, it[1], 44, 40); g.fillStyle = '#fff'; g.fillText(it[0], 50, it[1] + 58);
+    });
+    // jendela Notepad
+    var wx = 300, wy = 110, ww = 680, wh = 420;
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(wx + 6, wy + 8, ww, wh);
+    g.fillStyle = '#fff'; g.fillRect(wx, wy, ww, wh);
+    g.fillStyle = '#f0f0f0'; g.fillRect(wx, wy, ww, 34);
+    g.fillStyle = '#222'; g.textAlign = 'left'; g.font = '14px Segoe UI, Arial'; g.fillText('catatan.txt - Notepad', wx + 12, wy + 22);
+    g.fillText('—   ☐   ✕', wx + ww - 92, wy + 22);
+    g.font = '18px Consolas, monospace'; g.fillStyle = '#111';
+    var lines = String(r.text).split('\n'), y = wy + 66;
+    lines.slice(-15).forEach(function (ln, i, arr) { g.fillText(ln + (i === arr.length - 1 && Math.floor(Date.now() / 500) % 2 ? '|' : ''), wx + 16, y); y += 24; });
+    // taskbar
+    g.fillStyle = 'rgba(18,22,30,.94)'; g.fillRect(0, 680, 1280, 40);
+    g.fillStyle = '#4ea3ff'; g.fillRect(16, 690, 20, 20);
+    g.fillStyle = '#fff'; g.font = '13px Segoe UI, Arial'; g.textAlign = 'right';
+    var d = new Date(); g.fillText(('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2), 1264, 705);
+    g.textAlign = 'left'; g.fillText(r.user + '  ·  Mode demo: klik, ketik, atau kirim tombol dari panel', 52, 705);
+    // tanda klik & tombol terakhir
+    var now = Date.now();
+    r.marks = r.marks.filter(function (m) { return now - m.t < 2500; });
+    r.marks.forEach(function (m) {
+      g.strokeStyle = m.b === 'right' ? '#ffb347' : '#7CFFB2'; g.lineWidth = 3;
+      g.beginPath(); g.arc(m.x * 1280, m.y * 720, m.n === 2 ? 22 : 15, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = g.strokeStyle; g.font = 'bold 13px Segoe UI, Arial';
+      g.fillText(m.b === 'right' ? 'klik kanan' : m.n === 2 ? 'klik ganda' : 'klik', m.x * 1280 + 20, m.y * 720 - 16);
+    });
+    if (r.key && now - r.keyAt < 3000) {
+      g.fillStyle = 'rgba(0,0,0,.7)'; g.fillRect(540, 600, 200, 44); g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = 'bold 18px Segoe UI, Arial';
+      g.fillText(r.key, 640, 629);
+    }
+    return c.toDataURL('image/jpeg', 0.72).split(',')[1];
+  }
   var st = null;
   var DEMO_KEY = 'demo0a1b2c3d4e5f60718293a4b5c6d7e8f9';
   var DEMO_REAL = 'C:\\Program Files\\SafeExamBrowser\\Application\\SafeExamBrowser.exe';
@@ -932,6 +1005,51 @@ var Demo = (function () {
       return fetch('agent/agent.ps1').then(function (r) { if (!r.ok) throw new Error('x'); return r.text(); })
         .then(function (code) { return { code: code }; }, function () { return { code: '# Kode agen tersedia di menu Panduan & Kode.' }; });
     },
+    remoteStart: function (d) {
+      var e = ep(d.id);
+      if (!e) throw new Error('Endpoint tidak ditemukan.');
+      dRm[e.id] = { sid: 'demo' + Math.random().toString(16).slice(2, 14), q: d.q || 'sedang', ctl: d.ctl !== false, seq: 0, t0: Date.now(),
+        cur: { x: 0.55, y: 0.5 }, marks: [], text: 'Catatan ujian ' + e.name + '\n', key: '', dirty: true, last: 0, user: e.user || 'siswa' };
+      return { sid: dRm[e.id].sid, q: dRm[e.id].q, ctl: dRm[e.id].ctl };
+    },
+    remoteFrame: function (d) {
+      var r = dRm[d.id];
+      if (!r || r.sid !== d.sid) return { state: 'ended' };
+      var now = Date.now();
+      if (now - r.t0 < 2200) return { state: 'wait', since: now - r.t0, q: r.q, ctl: r.ctl };
+      if (r.dirty || now - r.last > 1000) { r.seq++; r.img = demoScreen(r); r.last = now; r.dirty = false; }
+      var o = { state: 'live', seq: r.seq, age: 300 + Math.round(Math.random() * 200), alive: 400, w: 1280, h: 720, sw: 1920, sh: 1080, cx: r.cur.x, cy: r.cur.y, q: r.q, ctl: r.ctl };
+      if (Number(d.have || 0) < r.seq) o.img = r.img;
+      return o;
+    },
+    remoteInput: function (d) {
+      var r = dRm[d.id];
+      if (!r || r.sid !== d.sid) return { state: 'ended' };
+      if (!r.ctl) throw new Error('Sesi ini dalam mode lihat saja.');
+      (d.ev || []).forEach(function (ev) {
+        if (ev.x !== undefined) r.cur = { x: ev.x, y: ev.y };
+        if (ev.t === 'click') r.marks.push({ x: ev.x, y: ev.y, t: Date.now(), b: ev.b, n: ev.n });
+        if (ev.t === 'text') r.text += ev.s;
+        if (ev.t === 'key') {
+          var v = ev.vks || [];
+          if (v.length === 1 && v[0] === 8) r.text = r.text.slice(0, -1);
+          else if (v.length === 1 && v[0] === 13) r.text += '\n';
+          r.key = v.map(function (k) { return ({ 17: 'Ctrl', 18: 'Alt', 16: 'Shift', 91: 'Win', 13: 'Enter', 27: 'Esc', 9: 'Tab', 8: 'Backspace', 115: 'F4', 116: 'F5', 122: 'F11' })[k] || String.fromCharCode(k); }).join('+');
+          r.keyAt = Date.now();
+        }
+        if (ev.t === 'wheel') { r.key = 'Gulir ' + (ev.d < 0 ? 'ke bawah' : 'ke atas'); r.keyAt = Date.now(); }
+      });
+      r.dirty = true;
+      return { ok: true };
+    },
+    remoteSet: function (d) {
+      var r = dRm[d.id];
+      if (!r || r.sid !== d.sid) return { state: 'ended' };
+      if (d.q) r.q = d.q;
+      if (d.ctl !== undefined) r.ctl = !!d.ctl;
+      return { ok: true, q: r.q, ctl: r.ctl };
+    },
+    remoteStop: function (d) { if (dRm[d.id] && dRm[d.id].sid === d.sid) delete dRm[d.id]; return { ok: true }; },
     logout: function () { return { ok: true }; }
   };
   return {
@@ -1228,7 +1346,7 @@ function openDrawer(html) {
   $('#layer').innerHTML = '<div class="scrim" id="scrim" style="justify-content:flex-end;padding:0"></div><aside class="drawer" role="dialog" aria-modal="true">' + html + '</aside>';
   $('#scrim').addEventListener('mousedown', closeLayer);
 }
-function closeLayer() { $('#layer').innerHTML = ''; Wizard.open = false; }
+function closeLayer() { if (Remote.sid || Remote.isOpen) Remote.stop(); $('#layer').innerHTML = ''; Wizard.open = false; }
 function confirmBox(title, body, okLabel, danger) {
   return new Promise(function (resolve) {
     openModal('<div class="mh"><h3>' + esc(title) + '</h3><button class="x" data-act="close">' + icon('x') + '</button></div>' +
@@ -1480,7 +1598,8 @@ VIEWS.eps = {
       var sel = !!S.sel[e.id];
       return '<tr class="click' + (sel ? ' sel' : '') + '" data-act="row" data-id="' + esc(e.id) + '">' +
         '<td class="chk"><input type="checkbox" data-act="pick" data-id="' + esc(e.id) + '"' + (sel ? ' checked' : '') + ' aria-label="Pilih ' + esc(e.name) + '"></td>' +
-        '<td class="nm"><button data-act="ep-detail" data-id="' + esc(e.id) + '">' + esc(e.name) + '</button></td>' +
+        '<td class="nm"><button data-act="ep-detail" data-id="' + esc(e.id) + '">' + esc(e.name) + '</button>' +
+          (e.online ? '<button class="rmt-ic" data-act="remote" data-id="' + esc(e.id) + '" title="Remote layar ' + esc(e.name) + '" aria-label="Remote layar ' + esc(e.name) + '">' + icon('monitor', 'sm') + '</button>' : '') + '</td>' +
         '<td class="muted cm">' + esc(e.comment || 'None') + '</td>' +
         '<td class="user">' + (e.user ? esc(e.user) : '<span class="muted">' + (e.online ? 'Tidak ada yang login' : '-') + '</span>') + '</td>' +
         '<td><span class="st ' + (e.online ? 'on' : 'off') + '">' + (e.online ? 'Terhubung' : 'Terputus') + '</span></td>' +
@@ -1530,6 +1649,8 @@ function epDetail(id) {
   openDrawer('<div class="modal" style="box-shadow:none;width:100%;max-height:none;height:100%;border-radius:0"><div class="mh"><h3>' + esc(e.name) + '</h3>' +
     '<span class="st ' + (e.online ? 'on' : 'off') + '">' + (e.online ? 'Terhubung' : 'Terputus') + '</span>' +
     '<button class="x" data-act="close">' + icon('x') + '</button></div><div class="mb">' +
+    '<div><button class="btn" data-act="remote" data-id="' + esc(e.id) + '"' + (e.online ? '' : ' disabled title="Komputer sedang terputus"') + '>' + icon('monitor', 'sm') + 'Remote layar</button>' +
+    '<div class="muted" style="font-size:12.5px;margin-top:6px">Lihat dan kendalikan layar komputer ini dari jarak jauh.</div></div>' +
     '<dl class="kv"><dt>Grup</dt><dd>' + esc(e.group) + '</dd><dt>User</dt><dd>' + esc(e.user || '-') + '</dd>' +
     '<dt>Exam Browser</dt><dd>' + (e.exam ? '<span class="chip run">Berjalan</span>' : 'Tidak berjalan') + '</dd>' +
     (e.kiosk ? '<dt>Situs terkunci</dt><dd><span class="chip lock">Terkunci</span> <span class="mono" style="overflow-wrap:anywhere">' + esc(e.kiosk) + '</span></dd>' : '') +
@@ -1550,6 +1671,281 @@ function epDetail(id) {
       return '<button class="btn ghost" data-act="one-run" data-a="' + a + '" data-id="' + esc(e.id) + '">' + icon(SCRIPT[a].icon, 'sm') + esc(SCRIPT[a].name) + '</button>';
     }).join('') + '</div></div></div>');
 }
+
+/* =============================== REMOTE LAYAR =============================== */
+/* Panel tidak tersambung langsung ke komputer siswa: gambar layar (±1/detik) dan
+   input mouse/keyboard dititipkan lewat backend Apps Script. */
+var RMT_KEYS = [
+  ['', 'Kirim tombol…'], ['91', 'Tombol Windows'], ['18,9', 'Alt+Tab'], ['18,115', 'Alt+F4 (tutup jendela)'],
+  ['27', 'Esc'], ['13', 'Enter'], ['9', 'Tab'], ['116', 'F5 (muat ulang)'], ['122', 'F11 (layar penuh)'],
+  ['17,16,27', 'Ctrl+Shift+Esc (Task Manager)'], ['91,68', 'Win+D (tampilkan desktop)'],
+  ['17,67,66,76', 'Ctrl+C+B+L (keluar Exambro ANBK)'], ['17,67,66', 'Ctrl+C+B (keluar Exambro)'], ['91,76', 'Win+L (kunci layar)']
+];
+var Remote = {
+  sid: null, isOpen: false,
+  q: 'sedang', ctl: true,
+  open: function (id) {
+    var R = Remote;
+    var e = S.endpoints.filter(function (x) { return x.id === id; })[0];
+    if (!e) return;
+    if (!e.online) { toast(e.name + ' sedang terputus, remote tidak bisa dimulai.'); return; }
+    if (R.sid) R.stop();
+    R.id = id; R.name = e.name; R.seq = 0; R.n = 0; R.queue = []; R.sending = false; R.frames = []; R.last = null;
+    R.isOpen = true; R.rtt = 0; R.typed = ''; R.drag = null; R.pending = null; R.wheel = 0;
+    $('#layer').innerHTML = '<div class="rmt" id="rmt" role="dialog" aria-modal="true" aria-label="Remote layar ' + esc(e.name) + '">' +
+      '<div class="rmt-bar">' +
+        '<button class="btn ghost sm" data-act="rmt-end" title="Akhiri remote">' + icon('x', 'sm') + 'Akhiri</button>' +
+        '<span class="t">' + icon('monitor', 'sm') + ' ' + esc(e.name) + (e.user ? ' <span class="meta">' + esc(e.user) + '</span>' : '') + '</span>' +
+        '<span class="rmt-st wait" id="rmt-st">Menghubungkan</span><span class="meta" id="rmt-meta"></span><span class="sp"></span>' +
+        '<label class="meta" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rmt-ctl"' + (R.ctl ? ' checked' : '') + '>Kendalikan</label>' +
+        '<select class="inp" id="rmt-q" title="Kualitas gambar">' + [['hemat', 'Hemat kuota'], ['sedang', 'Kualitas sedang'], ['tajam', 'Tajam']].map(function (o) {
+          return '<option value="' + o[0] + '"' + (o[0] === R.q ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+        '<select class="inp" id="rmt-key" title="Kirim kombinasi tombol">' + RMT_KEYS.map(function (k) { return '<option value="' + k[0] + '">' + esc(k[1]) + '</option>'; }).join('') + '</select>' +
+        '<button class="btn ghost sm" data-act="rmt-full" title="Layar penuh">' + icon('expand', 'sm') + '</button>' +
+      '</div>' +
+      '<div class="rmt-stage" id="rmt-stage" tabindex="0"><img id="rmt-img" alt="Layar ' + esc(e.name) + '" draggable="false" hidden>' +
+        '<svg class="rmt-cur" id="rmt-cur" viewBox="0 0 18 18"><path d="M2 1l12 7.5-5.2 1.2L12 16l-2.4 1-3.1-6.3L2 14z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/></svg>' +
+        '<div class="rmt-msg" id="rmt-msg"><span class="spin"></span><b>Menghubungkan ke ' + esc(e.name) + '…</b></div></div>' +
+      '<div class="rmt-foot"><input class="inp" id="rmt-text" maxlength="2000" placeholder="Ketik teks di sini lalu Enter untuk mengetiknya di komputer siswa">' +
+        '<button class="btn ghost sm" data-act="rmt-send">Kirim teks</button>' +
+        '<span>Klik gambar untuk mengendalikan; saat gambar aktif, ketikan keyboard ikut terkirim. Ctrl+Alt+Del, layar login, dan jendela UAC tidak bisa dikendalikan (dibatasi Windows).</span></div>' +
+    '</div>';
+    R.wire();
+    call('remoteStart', { id: id, q: R.q, ctl: R.ctl }).then(function (r) {
+      if (!R.isOpen || R.id !== id) { call('remoteStop', { id: id, sid: r.sid }).catch(function () {}); return; }
+      R.sid = r.sid; R.t0 = Date.now(); R.poll();
+    }, function (err) { R.ended(err.message); });
+  },
+  wire: function () {
+    var R = Remote, stage = $('#rmt-stage'), img = $('#rmt-img');
+    $('#rmt-ctl').addEventListener('change', function () {
+      R.ctl = this.checked; stage.classList.toggle('ctl', R.ctl);
+      if (R.sid) call('remoteSet', { id: R.id, sid: R.sid, ctl: R.ctl }).catch(function (e) { toast(e.message); });
+    });
+    stage.classList.toggle('ctl', R.ctl);
+    $('#rmt-q').addEventListener('change', function () {
+      R.q = this.value;
+      if (R.sid) call('remoteSet', { id: R.id, sid: R.sid, q: R.q }).catch(function (e) { toast(e.message); });
+    });
+    $('#rmt-key').addEventListener('change', function () {
+      var v = this.value; this.value = '';
+      if (!v) return;
+      if (!R.ctl) { toast('Centang "Kendalikan" untuk mengirim tombol.'); return; }
+      R.send({ t: 'key', vks: v.split(',').map(Number) });
+      toast('Terkirim: ' + RMT_KEYS.filter(function (k) { return k[0] === v; })[0][1]);
+      stage.focus();
+    });
+    $('#rmt-text').addEventListener('keydown', function (e) {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); R.sendText(); }
+    });
+    var pos = function (ev) {
+      var r = img.getBoundingClientRect();
+      return { x: Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)) };
+    };
+    img.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    img.addEventListener('pointerdown', function (e) {
+      stage.focus();
+      if (!R.ctl || !R.sid) return;
+      e.preventDefault();
+      try { img.setPointerCapture(e.pointerId); } catch (x) {}
+      R.drag = { cx: e.clientX, cy: e.clientY, p: pos(e), moved: false, b: e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left', mt: 0 };
+    });
+    img.addEventListener('pointermove', function (e) {
+      var d = R.drag;
+      if (!d) return;
+      if (!d.moved && Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) > 6) { d.moved = true; R.send({ t: 'down', x: d.p.x, y: d.p.y, b: d.b }); }
+      if (d.moved && Date.now() - d.mt > 90) { d.mt = Date.now(); var p = pos(e); R.send({ t: 'move', x: p.x, y: p.y }); }
+    });
+    var up = function (e) {
+      var d = R.drag;
+      if (!d) return;
+      R.drag = null;
+      var p = pos(e);
+      if (d.moved) { R.send({ t: 'up', x: p.x, y: p.y, b: d.b }); return; }
+      R.ripple(e);
+      if (d.b !== 'left') { R.send({ t: 'click', x: d.p.x, y: d.p.y, b: d.b, n: 1 }); return; }
+      // dua klik cepat di tempat yang sama dikirim sebagai klik ganda
+      var pc = R.pending;
+      if (pc && Math.abs(pc.p.x - d.p.x) < 0.02 && Math.abs(pc.p.y - d.p.y) < 0.02) {
+        clearTimeout(pc.t); R.pending = null; R.send({ t: 'click', x: pc.p.x, y: pc.p.y, b: 'left', n: 2 });
+      } else {
+        if (pc) { clearTimeout(pc.t); R.send({ t: 'click', x: pc.p.x, y: pc.p.y, b: 'left', n: 1 }); }
+        R.pending = { p: d.p, t: setTimeout(function () { R.pending = null; R.send({ t: 'click', x: d.p.x, y: d.p.y, b: 'left', n: 1 }); }, 260) };
+      }
+    };
+    img.addEventListener('pointerup', up);
+    img.addEventListener('pointercancel', function () { R.drag = null; });
+    stage.addEventListener('wheel', function (e) {
+      if (!R.ctl || !R.sid || img.hidden) return;
+      e.preventDefault();
+      R.wheel += e.deltaY;
+      if (R.wheelT) return;
+      var p = pos(e);
+      R.wheelT = setTimeout(function () {
+        R.wheelT = null;
+        var steps = Math.max(-10, Math.min(10, Math.round(R.wheel / 100) || (R.wheel > 0 ? 1 : -1)));
+        R.wheel = 0;
+        R.send({ t: 'wheel', x: p.x, y: p.y, d: -steps * 120 });
+      }, 130);
+    }, { passive: false });
+    stage.addEventListener('keydown', function (e) {
+      if (!R.ctl || !R.sid) return;
+      e.preventDefault(); e.stopPropagation();
+      var k = e.key;
+      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph'].indexOf(k) >= 0) return;
+      if (k.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        R.typed += k; clearTimeout(R.typeT); R.typeT = setTimeout(R.flushTyped, 120); return;
+      }
+      R.flushTyped();
+      var vk = e.keyCode || 0;
+      if (!vk || vk === 229) return;
+      var vks = [];
+      if (e.ctrlKey) vks.push(17);
+      if (e.altKey) vks.push(18);
+      if (e.shiftKey) vks.push(16);
+      if (e.metaKey) vks.push(91);
+      vks.push(vk);
+      R.send({ t: 'key', vks: vks });
+    });
+    window.addEventListener('resize', R.placeCursor);
+  },
+  flushTyped: function () {
+    var R = Remote;
+    clearTimeout(R.typeT);
+    if (R.typed) { R.send({ t: 'text', s: R.typed }); R.typed = ''; }
+  },
+  sendText: function () {
+    var R = Remote, i = $('#rmt-text');
+    if (!i || !i.value) return;
+    if (!R.ctl) { toast('Centang "Kendalikan" untuk mengirim teks.'); return; }
+    R.send({ t: 'text', s: i.value }); i.value = '';
+    toast('Teks dikirim ke ' + R.name + '.');
+  },
+  send: function (ev) {
+    var R = Remote;
+    if (!R.sid || !R.ctl) return;
+    R.queue.push(ev);
+    R.flush();
+  },
+  flush: function () {
+    var R = Remote;
+    if (R.sending || !R.queue.length || !R.sid) return;
+    var batch = R.queue.splice(0, 60);
+    R.sending = true;
+    R.n++;
+    call('remoteInput', { id: R.id, sid: R.sid, n: R.n, ev: batch }).then(function (r) {
+      if (r && r.state === 'ended') R.ended('Sesi remote sudah berakhir.');
+    }, function (e) { toast(e.message); }).then(function () {
+      R.sending = false;
+      if (R.queue.length) setTimeout(R.flush, 20);
+    });
+  },
+  ripple: function (e) {
+    var st = $('#rmt-stage'); if (!st) return;
+    var r = st.getBoundingClientRect(), d = document.createElement('span');
+    d.className = 'rmt-rip'; d.style.left = (e.clientX - r.left) + 'px'; d.style.top = (e.clientY - r.top) + 'px';
+    st.appendChild(d); setTimeout(function () { d.remove(); }, 600);
+  },
+  poll: function () {
+    var R = Remote, sid = R.sid;
+    if (!sid) return;
+    var t0 = Date.now();
+    call('remoteFrame', { id: R.id, sid: sid, have: R.seq }).then(function (f) {
+      if (R.sid !== sid) return;
+      R.rtt = Date.now() - t0;
+      if (f.state === 'ended') { R.ended('Sesi remote berakhir.'); return; }
+      R.render(f);
+      R.timer = setTimeout(R.poll, f.img ? 200 : 500);
+    }, function (err) {
+      if (R.sid !== sid) return;
+      R.status('wait', 'Koneksi bermasalah');
+      $('#rmt-meta').textContent = err.message;
+      R.timer = setTimeout(R.poll, 2000);
+    });
+  },
+  status: function (cls, text) {
+    var st = $('#rmt-st'); if (!st) return;
+    st.className = 'rmt-st ' + cls; st.textContent = text;
+  },
+  msg: function (html) {
+    var m = $('#rmt-msg'); if (!m) return;
+    m.hidden = !html; if (html) m.innerHTML = html;
+  },
+  render: function (f) {
+    var R = Remote, img = $('#rmt-img');
+    if (!img) return;
+    if (f.q && $('#rmt-q') && document.activeElement !== $('#rmt-q')) $('#rmt-q').value = f.q;
+    if (f.state === 'wait') {
+      var s = Math.round((f.since || 0) / 1000);
+      R.status('wait', 'Menunggu komputer');
+      $('#rmt-meta').textContent = s + ' dtk';
+      R.msg('<span class="spin"></span><b>' + (f.err ? esc(f.err) : 'Menunggu ' + esc(R.name) + ' memulai remote…') + '</b>' +
+        '<div class="muted">' + (s < 25 ? 'Agen di komputer siswa melapor kira-kira tiap 10 detik, lalu menyiapkan pengambil gambar layar.' :
+          'Belum ada gambar setelah ' + s + ' detik. Pastikan komputer menyala dan agennya versi 1.9.0 atau lebih baru (jalankan #Perbarui Agen).') + '</div>' +
+        '<div><button class="btn ghost sm" data-act="rmt-end">Batal</button></div>');
+      return;
+    }
+    if (f.img) {
+      img.src = 'data:image/jpeg;base64,' + f.img;
+      img.hidden = false;
+      R.seq = f.seq;
+      R.frames.push(Date.now());
+    }
+    R.last = f;
+    var now = Date.now();
+    R.frames = R.frames.filter(function (t) { return now - t < 6000; });
+    var stale = (f.alive || 0) > 9000;
+    var locked = f.desk === 'locked';
+    img.classList.toggle('dim', stale || locked);
+    if (!f.seq && locked) img.hidden = true;
+    if (locked) {
+      R.status('wait', 'Layar tidak bisa diambil');
+      R.msg('<b>Layar ' + esc(R.name) + ' sedang terkunci atau menampilkan jendela keamanan Windows</b><div class="muted">Layar kunci, Ctrl+Alt+Del, dan jendela UAC tidak bisa dilihat atau dikendalikan dari jarak jauh. Gambar muncul lagi setelah layar kembali normal.</div>');
+    } else if (stale) {
+      R.status('wait', 'Tersendat');
+      R.msg('<b>Gambar dari ' + esc(R.name) + ' tertunda ' + Math.round(f.alive / 1000) + ' detik</b><div class="muted">Koneksi internet komputer siswa mungkin lambat. Menunggu gambar berikutnya…</div>');
+    } else {
+      R.status('live', 'Terhubung');
+      R.msg('');
+    }
+    var fps = R.frames.length / 6;
+    $('#rmt-meta').textContent = (f.sw ? f.sw + '×' + f.sh + ' · ' : '') + (fps >= 0.95 ? fps.toFixed(0) : fps.toFixed(1)).replace('.', ',') + ' gambar/dtk · jeda ' +
+      (((f.age || 0) + R.rtt / 2) / 1000).toFixed(1).replace('.', ',') + ' dtk';
+    R.placeCursor();
+  },
+  placeCursor: function () {
+    var R = Remote, f = R.last, c = $('#rmt-cur'), img = $('#rmt-img'), st = $('#rmt-stage');
+    if (!c || !img || !st) return;
+    if (!f || img.hidden || !(f.cx >= 0) || !(f.cy >= 0)) { c.style.display = 'none'; return; }
+    var r = img.getBoundingClientRect(), sr = st.getBoundingClientRect();
+    c.style.display = 'block';
+    c.style.left = (r.left - sr.left + f.cx * r.width) + 'px';
+    c.style.top = (r.top - sr.top + f.cy * r.height) + 'px';
+  },
+  ended: function (text) {
+    var R = Remote;
+    clearTimeout(R.timer);
+    R.sid = null;
+    R.status('end', 'Berakhir');
+    var img = $('#rmt-img'); if (img) img.classList.add('dim');
+    R.msg('<b>' + esc(text || 'Sesi remote berakhir.') + '</b><div style="display:flex;gap:8px"><button class="btn sm" data-act="rmt-retry">Sambungkan lagi</button><button class="btn ghost sm" data-act="rmt-end">Tutup</button></div>');
+  },
+  stop: function () {
+    var R = Remote;
+    clearTimeout(R.timer); clearTimeout(R.typeT); clearTimeout(R.wheelT);
+    if (R.pending) clearTimeout(R.pending.t);
+    window.removeEventListener('resize', R.placeCursor);
+    if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) {} }
+    if (R.sid) { var d = { id: R.id, sid: R.sid }; R.sid = null; call('remoteStop', d).catch(function () {}); }
+    R.isOpen = false;
+  }
+};
+/* tab panel ditutup saat remote berjalan: akhiri sesi */
+window.addEventListener('pagehide', function () {
+  if (!Remote.sid || !IS_LIVE || !navigator.sendBeacon) return;
+  try { navigator.sendBeacon(API, JSON.stringify({ action: 'remoteStop', data: { id: Remote.id, sid: Remote.sid }, token: S.token })); } catch (e) {}
+});
 
 /* ---------- RIWAYAT ---------- */
 VIEWS.jobs = {
@@ -2179,6 +2575,11 @@ document.addEventListener('click', function (e) {
     case 'logout': call('logout').then(showLogin, showLogin); break;
     case 'connect': showConnect(); break;
     case 'close': closeLayer(); break;
+    case 'remote': Remote.open(el.getAttribute('data-id')); break;
+    case 'rmt-end': closeLayer(); break;
+    case 'rmt-retry': Remote.open(Remote.id); break;
+    case 'rmt-send': Remote.sendText(); break;
+    case 'rmt-full': var rm = $('#rmt'); if (document.fullscreenElement) document.exitFullscreen(); else if (rm && rm.requestFullscreen) rm.requestFullscreen().catch(function () {}); break;
     case 'wizard': Wizard.start({}); break;
     case 'wizard-sel': Wizard.start({ targets: Object.keys(S.sel) }); break;
     case 'wizard-script': Wizard.start({ action: el.getAttribute('data-a'), jump: true }); break;

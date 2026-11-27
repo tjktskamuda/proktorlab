@@ -122,6 +122,7 @@ const cache = {
   remove: k => { delete cacheStore[k]; },
   removeAll: ks => { ks.forEach(k => delete cacheStore[k]); },
   getAll: keys => { const o = {}; keys.forEach(k => { const v = cache.get(k); if (v != null) o[k] = v; }); return o; },
+  putAll: (o, ttl) => { Object.keys(o).forEach(k => cache.put(k, o[k], ttl)); },
 };
 const lock = { waitLock() {}, tryLock() { return true; }, releaseLock() {} };
 

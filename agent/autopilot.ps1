@@ -1,4 +1,4 @@
-# ProktorLab Autopilot 1.7.0
+# ProktorLab Autopilot 1.8.0
 # ---------------------------------------------------------------
 # Dijalankan oleh agen ProktorLab di sesi Windows pengguna yang login.
 #
@@ -8,6 +8,8 @@
 #                 (misalnya Ctrl+C+B+L), lalu mengklik konfirmasi Yes/OK.
 #   -Mode fullscreen : menjadikan browser yang terbuka layar penuh (F11)
 #                 atau mengembalikannya (want = on / off).
+#   -Mode remote: mengirim gambar layar ke server (sekitar 1 gambar/detik) dan
+#                 menjalankan klik/ketikan proktor dari panel (remote).
 #   -Mode kiosk : membuka situs di Edge/Chrome mode kiosk (layar penuh tanpa
 #                 bisa keluar) lalu menjaganya: dibuka lagi bila ditutup dan
 #                 dikembalikan ke depan bila siswa pindah ke jendela lain.
@@ -48,6 +50,10 @@ $Want = 'on'
 $Delay = 0
 $Url = ''
 $Browser = 'edge'
+$RmtServer = ''
+$RmtId = ''
+$Sid = ''
+$Quality = 'sedang'
 if ($Job) {
   try {
     $J = Get-Content -LiteralPath $Job -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
@@ -63,6 +69,10 @@ if ($Job) {
     if ($J.want) { $Want = [string]$J.want }
     if ($J.url) { $Url = [string]$J.url }
     if ($J.browser) { $Browser = [string]$J.browser }
+    if ($J.server) { $RmtServer = [string]$J.server }
+    if ($J.id) { $RmtId = [string]$J.id }
+    if ($J.sid) { $Sid = [string]$J.sid }
+    if ($J.q) { $Quality = [string]$J.q }
     if ($J.delay) { $Delay = [int]$J.delay }
   } catch { $JobErr = 'File tugas tidak terbaca: ' + $_.Exception.Message }
 }
@@ -808,6 +818,223 @@ function Start-KioskGuard {
   }
 }
 
+# ======================================================================
+#  Mode remote: gambar layar -> server, input proktor -> komputer ini
+# ======================================================================
+$RmtCfg = @{
+  hemat  = @{ w = 960;  q = 40; ms = 900 }
+  sedang = @{ w = 1280; q = 50; ms = 700 }
+  tajam  = @{ w = 1600; q = 62; ms = 600 }
+}
+$BigCut = 0          # gambar terlalu besar untuk server -> perkecil bertahap
+$JpegCodec = $null
+$RmtLogged = 0
+
+function Invoke-Rmt($body) {
+  $json = ConvertTo-Json -InputObject $body -Depth 5 -Compress
+  $bytes = [Text.Encoding]::UTF8.GetBytes($json)
+  return Invoke-RestMethod -Uri $RmtServer -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8' -TimeoutSec 25 -UseBasicParsing
+}
+
+function Get-ScreenBounds {
+  try { $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; return @{ x = $b.X; y = $b.Y; w = $b.Width; h = $b.Height } } catch {}
+  return @{ x = 0; y = 0; w = 1920; h = 1080 }
+}
+
+# gambar layar utama dalam JPEG; $null bila layar tidak bisa diambil (layar kunci, UAC)
+# pengujian tanpa Windows: gambar dari file, berganti tiap 3 detik
+function Get-TestFrame($qc) {
+  $tw0 = [int]([double]$qc.w * (1 - 0.15 * $script:BigCut))
+  $files = @($env:PROKTORLAB_TEST_FRAME -split ';' | Where-Object { $_ })
+  $f = $files[[int][math]::Floor(((Get-Date) - $T0).TotalSeconds / 3) % $files.Count]
+  return @{ bytes = [IO.File]::ReadAllBytes($f); w = $tw0; h = [int]($tw0 * 9 / 16); sw = 1920; sh = 1080 }
+}
+
+function Get-ScreenFrame($qc) {
+  $tw0 = [int]([double]$qc.w * (1 - 0.15 * $script:BigCut))
+  $q = [math]::Max(20, [int]$qc.q - 10 * $script:BigCut)
+  $bd = Get-ScreenBounds
+  $bmp = $null; $g = $null; $small = $null; $g2 = $null; $ms = $null; $ep = $null
+  try {
+    $bmp = New-Object System.Drawing.Bitmap($bd.w, $bd.h)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.CopyFromScreen($bd.x, $bd.y, 0, 0, $bmp.Size)
+    $tw = [math]::Min($tw0, $bd.w)
+    $th = [int][math]::Round($bd.h * $tw / $bd.w)
+    $small = $bmp
+    if ($tw -lt $bd.w) {
+      $small = New-Object System.Drawing.Bitmap($tw, $th)
+      $g2 = [System.Drawing.Graphics]::FromImage($small)
+      $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBilinear
+      $g2.DrawImage($bmp, 0, 0, $tw, $th)
+    }
+    $ms = New-Object IO.MemoryStream
+    $ep = New-Object System.Drawing.Imaging.EncoderParameters(1)
+    $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]$q)
+    $small.Save($ms, $script:JpegCodec, $ep)
+    return @{ bytes = $ms.ToArray(); w = $tw; h = $th; sw = $bd.w; sh = $bd.h }
+  } catch {
+    return $null
+  } finally {
+    foreach ($o in @($g2, $g, $ep, $ms)) { if ($o) { try { $o.Dispose() } catch {} } }
+    if ($small -and -not [object]::ReferenceEquals($small, $bmp)) { try { $small.Dispose() } catch {} }
+    if ($bmp) { try { $bmp.Dispose() } catch {} }
+  }
+}
+
+function Get-FrameHash([byte[]]$b) {
+  try { return [Convert]::ToBase64String([Security.Cryptography.MD5]::Create().ComputeHash($b)) } catch {}
+  return ([string]$b.Length + ':' + $b[[int]($b.Length / 2)] + ':' + $b[$b.Length - 2])
+}
+
+function Get-CursorNorm($bd) {
+  try {
+    $p = [System.Windows.Forms.Cursor]::Position
+    return @{ x = [math]::Round(($p.X - $bd.x) / $bd.w, 4); y = [math]::Round(($p.Y - $bd.y) / $bd.h, 4) }
+  } catch { return @{ x = -1; y = -1 } }
+}
+
+function ConvertTo-SendKeys([string]$s) {
+  $sb = New-Object Text.StringBuilder
+  foreach ($ch in $s.ToCharArray()) {
+    $c = [int]$ch
+    if ($c -eq 10) { [void]$sb.Append('{ENTER}') }
+    elseif ($c -eq 13) { }
+    elseif ($c -eq 9) { [void]$sb.Append('{TAB}') }
+    elseif ('+^%~(){}[]'.IndexOf($ch) -ge 0) { [void]$sb.Append('{' + $ch + '}') }
+    else { [void]$sb.Append($ch) }
+  }
+  return $sb.ToString()
+}
+
+$ExtendedVk = @(0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x5B, 0x5C, 0x5D, 0x6F, 0x90, 0xA3, 0xA5)
+
+function Send-Vks($vks) {
+  foreach ($vk in $vks) {
+    $f = 0; if ($ExtendedVk -contains $vk) { $f = 1 }
+    [ProktorLab.Native]::keybd_event([byte]$vk, [byte][ProktorLab.Native]::MapVirtualKey([uint32]$vk, 0), $f, 0)
+    Start-Sleep -Milliseconds 40
+  }
+  Start-Sleep -Milliseconds 60
+  for ($k = $vks.Count - 1; $k -ge 0; $k--) {
+    $vk = $vks[$k]
+    $f = 2; if ($ExtendedVk -contains $vk) { $f = 3 }
+    [ProktorLab.Native]::keybd_event([byte]$vk, [byte][ProktorLab.Native]::MapVirtualKey([uint32]$vk, 0), $f, 0)
+    Start-Sleep -Milliseconds 20
+  }
+}
+
+# satu input dari panel. x, y = posisi relatif 0..1 pada layar utama
+function Invoke-RemoteEvent($e) {
+  if ($script:NativeState -le 0) {
+    # tanpa fungsi Windows (pengujian): hanya dicatat
+    if ($script:RmtLogged -lt 200) { $script:RmtLogged++; Write-AutoLog ('Input: ' + (ConvertTo-Json -InputObject $e -Compress)) }
+    return
+  }
+  $bd = Get-ScreenBounds
+  $x = [int]($bd.x + [double]$e.x * $bd.w)
+  $y = [int]($bd.y + [double]$e.y * $bd.h)
+  $btn = [string]$e.b
+  $dn = 2; $up = 4
+  if ($btn -eq 'right') { $dn = 8; $up = 0x10 } elseif ($btn -eq 'middle') { $dn = 0x20; $up = 0x40 }
+  switch ([string]$e.t) {
+    'move' { [void][ProktorLab.Native]::SetCursorPos($x, $y) }
+    'down' { [void][ProktorLab.Native]::SetCursorPos($x, $y); Start-Sleep -Milliseconds 20; [ProktorLab.Native]::mouse_event($dn, 0, 0, 0, 0) }
+    'up' { [void][ProktorLab.Native]::SetCursorPos($x, $y); Start-Sleep -Milliseconds 20; [ProktorLab.Native]::mouse_event($up, 0, 0, 0, 0) }
+    'click' {
+      [void][ProktorLab.Native]::SetCursorPos($x, $y)
+      Start-Sleep -Milliseconds 30
+      $n = [math]::Max(1, [math]::Min(3, [int]$e.n))
+      for ($i = 0; $i -lt $n; $i++) {
+        [ProktorLab.Native]::mouse_event($dn, 0, 0, 0, 0); Start-Sleep -Milliseconds 40
+        [ProktorLab.Native]::mouse_event($up, 0, 0, 0, 0); Start-Sleep -Milliseconds 70
+      }
+    }
+    'wheel' { [void][ProktorLab.Native]::SetCursorPos($x, $y); [ProktorLab.Native]::mouse_event(0x0800, 0, 0, [int]$e.d, 0) }
+    'key' { $vks = @($e.vks | ForEach-Object { [int]$_ } | Where-Object { $_ -gt 0 -and $_ -lt 255 } | Select-Object -First 6); if ($vks.Count) { Send-Vks $vks } }
+    'text' { $t = [string]$e.s; if ($t) { [System.Windows.Forms.SendKeys]::SendWait((ConvertTo-SendKeys $t.Substring(0, [math]::Min(2000, $t.Length)))) } }
+  }
+}
+
+function New-RemoteTray {
+  if ($env:OS -ne 'Windows_NT') { return $null }
+  try {
+    $ni = New-Object System.Windows.Forms.NotifyIcon
+    $ni.Icon = [System.Drawing.SystemIcons]::Information
+    $ni.Text = 'ProktorLab: layar sedang di-remote proktor'
+    $ni.Visible = $true
+    $ni.ShowBalloonTip(6000, 'ProktorLab', 'Proktor sedang melihat dan dapat mengendalikan komputer ini dari jarak jauh.', [System.Windows.Forms.ToolTipIcon]::Info)
+    return $ni
+  } catch { return $null }
+}
+
+function Start-RemoteMode {
+  try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+  $isWin = ($env:OS -eq 'Windows_NT')
+  if ($isWin) {
+    [void](Initialize-Native)    # juga membuat koordinat layar = piksel sebenarnya (DPI)
+    try {
+      Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+      Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+      $script:JpegCodec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' } | Select-Object -First 1
+    } catch { Write-AutoLog ('Pengambil gambar layar tidak tersedia: ' + $_.Exception.Message); return }
+  } elseif (-not $env:PROKTORLAB_TEST_FRAME) { Write-AutoLog 'Remote hanya berjalan di Windows.'; return }
+  if (-not $RmtServer -or -not $Sid) { Write-AutoLog 'Data sesi remote tidak lengkap.'; return }
+  $qc = $RmtCfg[$Quality]
+  if (-not $qc) { $qc = $RmtCfg['sedang'] }
+  $tray = New-RemoteTray
+  Write-AutoLog ('Remote dimulai (kualitas ' + $Quality + ', admin: ' + $Admin + ').')
+  $seq = 0; $got = 0; $lastHash = ''; $lastImg = [datetime]::MinValue; $fails = 0; $sent = 0; $locked = $false
+  $test = -not $isWin
+  while ($true) {
+    $loopAt = Get-Date
+    if ($test) { $fr = Get-TestFrame $qc } else { $fr = Get-ScreenFrame $qc }
+    $body = @{ a = 'rframe'; id = $RmtId; sid = $Sid; got = $got }
+    $hash = ''
+    if ($fr) {
+      if ($locked) { $locked = $false; Write-AutoLog 'Layar bisa diambil lagi.' }
+      if ($test) { $cur = @{ x = 0.5; y = 0.5 } } else { $cur = Get-CursorNorm (Get-ScreenBounds) }
+      $body.cx = $cur.x; $body.cy = $cur.y
+      $hash = Get-FrameHash $fr.bytes
+      if ($hash -ne $lastHash -or ((Get-Date) - $lastImg).TotalSeconds -gt 10) {
+        $seq++
+        $body.seq = $seq; $body.img = [Convert]::ToBase64String($fr.bytes)
+        $body.w = $fr.w; $body.h = $fr.h; $body.sw = $fr.sw; $body.sh = $fr.sh
+      }
+    } else {
+      $body.desk = 'locked'
+      if (-not $locked) { $locked = $true; Write-AutoLog 'Layar tidak bisa diambil (layar kunci, Ctrl+Alt+Del, atau jendela UAC).' }
+    }
+    $r = $null
+    try { $r = Invoke-Rmt $body; $fails = 0 } catch {
+      $fails++
+      if ($fails -eq 1 -or $fails % 10 -eq 0) { Write-AutoLog ('Gagal menghubungi server (' + $fails + 'x): ' + $_.Exception.Message) }
+      if ($fails -ge 40) { Write-AutoLog 'Server tidak bisa dihubungi, remote berhenti.'; break }
+      Start-Sleep -Milliseconds ([math]::Min(5000, 400 * $fails))
+      continue
+    }
+    if (-not $r) { Start-Sleep -Milliseconds 800; continue }
+    if ($r.end) { Write-AutoLog ('Sesi remote selesai (' + $sent + ' gambar terkirim).'); break }
+    if ($body.img) {
+      if ($r.ok) { $lastHash = $hash; $lastImg = Get-Date; $sent++ }
+      elseif ($r.big -and $script:BigCut -lt 3) { $script:BigCut++; Write-AutoLog 'Gambar terlalu besar, kualitas diturunkan.' }
+    }
+    if ($r.cfg -and $r.cfg.w) {
+      $nq = @{ w = [int]$r.cfg.w; q = [int]$r.cfg.q; ms = [int]$r.cfg.ms }
+      if ($nq.w -ne $qc.w -or $nq.q -ne $qc.q) { $qc = $nq; $script:BigCut = 0; $lastHash = '' }
+      $qc.ms = $nq.ms
+    }
+    if ($null -ne $r.got) { $got = [int]$r.got }
+    $evs = @($r.ev | Where-Object { $_ })
+    foreach ($e in $evs) { try { Invoke-RemoteEvent $e } catch { Write-AutoLog ('Input gagal: ' + $_.Exception.Message) } }
+    if ($tray) { try { [System.Windows.Forms.Application]::DoEvents() } catch {} }
+    $wait = [int]$qc.ms - [int]((Get-Date) - $loopAt).TotalMilliseconds
+    if ($evs.Count) { $wait = 120 }     # tampilkan hasil klik secepatnya
+    if ($wait -gt 0) { Start-Sleep -Milliseconds $wait }
+  }
+  if ($tray) { try { $tray.Visible = $false; $tray.Dispose() } catch {} }
+}
+
 # ---------------- mulai ----------------
 if ($MyInvocation.InvocationName -eq '.') { return }   # dimuat untuk pengujian
 if ($Mode -eq 'open' -and -not $Job) { try { Remove-Item -LiteralPath $LogFile -Force -ErrorAction SilentlyContinue } catch {} }
@@ -835,6 +1062,9 @@ if ($Mode -eq 'open' -and $Rules.Count -eq 0) { Write-AutoLog 'Tidak ada aturan 
 
 # ================= MODE KIOSK (tidak butuh UI Automation) =================
 if ($Mode -eq 'kiosk') { Start-KioskGuard; exit 0 }
+
+# ================= MODE REMOTE (tidak butuh UI Automation) =================
+if ($Mode -eq 'remote') { Start-RemoteMode; exit 0 }
 
 try { Initialize-Uia } catch {
   Write-AutoLog ('UI Automation tidak tersedia, klik otomatis dilewati: ' + $_.Exception.Message)
